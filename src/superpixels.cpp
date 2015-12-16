@@ -18,65 +18,15 @@ using namespace cv;
 #include "vl/generic.h"
 #include "vl/slic.h"
 
-//sistema de ecuaciones
-#include <cmath>
-#include <vector>
-#include <iomanip>
+
 using namespace std;
-/*#include "least-squares-linear-system2.h"
-using namespace Eigen;
-
-typedef Matrix<double, Dynamic, 1> MatrixFX;*/
-
-/*#define RED 0
-#define GREEN 1
-#define RANDOM 2
-
-
-// mode solve sistem
-#define CTE 0
-#define LINEAL 1
-#define MULTI 2
-
-#define NUMLABELS 20
-
-
-/*#define DEPTH_NEAR 224.0
-#define DEPTH_FAR_1 160.0
-#define DEPTH_FAR_2 96.0
-#define DEPTH_FAR_3 32.0*/
-
-/*#define DEPTH_NEAR 229
-#define DEPTH_FAR_0 179
-#define DEPTH_FAR_1 128
-#define DEPTH_FAR_2 77
-#define DEPTH_FAR_3 26*/
-
-/*#define DEPTH_NEAR 130//173//229.5
- #define DEPTH_FAR_0 86//125//178.5
- #define DEPTH_FAR_1 75//116//127.5
- #define DEPTH_FAR_2 33//69//76.6
- #define DEPTH_FAR_3 18//47//25.5*/
-
-/*#define DEPTH_NEAR 217
- #define DEPTH_FAR_0 160
- #define DEPTH_FAR_1 109
- #define DEPTH_FAR_2 77
- #define DEPTH_FAR_3 63*/
-
-/*#define DEPTH_NEAR 130
- #define DEPTH_FAR_0 105
- #define DEPTH_FAR_1 80
- #define DEPTH_FAR_2 46
- #define DEPTH_FAR_3 25*/
-
 
 class SuperPixels
 {
  
     Mat _image; // original image in color BGR
-    Mat _ids; // superpixels ids CV_32FC1
-    Mat _sobel; //boundaries superpixels uchar!
+    Mat _ids; // superpixels ids  CV_8UC1
+    Mat _sobel; //MASK superpixel boundaries  UCHAR
     
     Mat _labels; // labeling CV_32FC1
     
@@ -86,15 +36,10 @@ class SuperPixels
     
     SuperPixel *_arraySP;
    
+    int NUMLABELS=60;
     
     unsigned char _DEBUG = 1;
-    
-    /*****************************************************************/
-    
-    
-    
-    
-    /*****************************************************************/
+
     
 public:
     
@@ -104,10 +49,11 @@ public:
     ~SuperPixels(){ _image.release(); _ids.release(); _sobel.release(); }
     
     /*************************************************************************************
-     * SuperPixels
-     *  load _image and obtain superpixels
-     *  superpixel boundaries
-     *  initizalize superpixels
+     * SuperPixels: obtain superpixels of an image (path)
+     *  load _image (path) and obtain its superpixels
+     *      if image_TAM_SP.sp exits -> loadFile
+     *      else SLIC & save TAM_SP.sp
+     *
      */
     SuperPixels(string path)
     {
@@ -126,8 +72,8 @@ public:
             else
                 printf("Mat _image CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
             
-            _ids= Mat::zeros(_image.rows,_image.cols,CV_32FC1);
-            _sobel= Mat::zeros(_image.rows,_image.cols,CV_32FC1);
+            _ids= Mat::zeros(_image.rows,_image.cols,CV_8UC1);
+            _sobel= Mat::zeros(_image.rows,_image.cols,CV_8UC1);
             _labels= Mat::ones(_ids.rows,_ids.cols,CV_32FC1)*-1;
         }
         catch(int e)
@@ -139,6 +85,7 @@ public:
         size_t found = path.find_last_of(".");
         string name = path.substr(0,found) + "_" + to_string(_TAM_SP)+".sp";
         FILE *f = fopen(name.c_str(),"r");
+        
         if (f!=NULL)
         {
             fclose(f);
@@ -163,16 +110,15 @@ public:
             
         }
 
-
         _arraySP = new SuperPixel[maxID+1];
         
-        //init superpixels
-        calculateBoundariesSuperpixels();
-        initializeSuperpixels();
         return;
     }//SuperPixels
 
     
+    /*****************************************************************/
+    /*****************************************************************/
+
     Mat getImage()
     {
         if(_image.data == NULL)
@@ -217,6 +163,8 @@ public:
         
         return im;
     }//paintSuperpixel
+    
+    
 
     
     /*************************************************************************************
@@ -513,6 +461,47 @@ public:
         //MORE DESCRIPTORS
         
     }
+    
+    
+    /*************************************************************************************
+     * initializLabeling()
+     *
+     */
+    void initializeMeanLabeling(string path)
+    {
+        //read image
+        try{
+            _labels = imread(path,CV_LOAD_IMAGE_UNCHANGED);
+            _labels = (_labels / 255)*NUMLABELS;
+            
+            double min, max;
+            cv::minMaxLoc(_labels, &min, &max);
+            printf("%f %f ",min,max);
+                   
+            if(_labels.data == NULL)
+            {
+                printf("Image Labeling %s not found\n",path.c_str());
+                return;
+            }
+            else
+                printf("Mat _labels CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
+        }
+        catch(int e)
+        {
+            printf("Image Labeling %s not found\n",path.c_str());
+            return;
+        }
+        
+        for (int id=0; id < maxID+1; id++)
+        {
+            _arraySP[id].create_labelHist(_labels,NUMLABELS);
+            
+           /* imshow("HIST labels",_arraySP[id].paintHistogram());
+            waitKey(0);//*/
+        }
+
+    }//initializLabeling
+    
     
     
    // void infoSuperpixels2file(std::string nameFile);
