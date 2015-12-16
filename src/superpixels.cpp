@@ -81,7 +81,7 @@ class SuperPixels
     Mat _labels; // labeling CV_32FC1
     
     // superpixels params
-    int _TAM_SP = 20;
+    int _TAM_SP = 40;
     int _NUM_MAX_SP = 700;
     
     SuperPixel *_arraySP;
@@ -103,6 +103,12 @@ public:
     SuperPixels(){ maxID=0; }
     ~SuperPixels(){ _image.release(); _ids.release(); _sobel.release(); }
     
+    /*************************************************************************************
+     * SuperPixels
+     *  load _image and obtain superpixels
+     *  superpixel boundaries
+     *  initizalize superpixels
+     */
     SuperPixels(string path)
     {
         clock_t start = clock();
@@ -131,7 +137,7 @@ public:
         }
         
         size_t found = path.find_last_of(".");
-        string name = path.substr(0,found) + ".sp";
+        string name = path.substr(0,found) + "_" + to_string(_TAM_SP)+".sp";
         FILE *f = fopen(name.c_str(),"r");
         if (f!=NULL)
         {
@@ -141,7 +147,7 @@ public:
             
             loadSuperPixels(name);
             
-            if (_DEBUG == 1) printf("**** TIEMPO: load Superpixels: %f seconds\n ",(float) (((double)(clock() - start)) / CLOCKS_PER_SEC) );
+            if (_DEBUG == 1) printf("**** TIME: load Superpixels: %f seconds\n ",(float) (((double)(clock() - start)) / CLOCKS_PER_SEC) );
         }
         
         else
@@ -150,7 +156,11 @@ public:
             
             calculateSLICSuperpixels(_image);
             
-            if (_DEBUG == 1) printf("**** TIEMPO: calculate Superpixels: %f seconds\n ",(float) (((double)(clock() - start)) / CLOCKS_PER_SEC) );
+            if (_DEBUG == 1) printf("**** TIME: calculate Superpixels: %f seconds\n ",(float) (((double)(clock() - start)) / CLOCKS_PER_SEC) );
+            
+            //save superpixels in a file
+            superpixels2file(name);
+            
         }
 
 
@@ -160,7 +170,7 @@ public:
         calculateBoundariesSuperpixels();
         initializeSuperpixels();
         return;
-    };
+    }//SuperPixels
 
     
     Mat getImage()
@@ -189,7 +199,7 @@ public:
         
         // its neighbours
         color = new cv::Scalar( 0, 255, 0 );
-        set<int> neig = _arraySP[id].getNeighbours();
+        set<int> neig = _arraySP[id].getFirstNeighbours();
         
         std::set<int>::iterator it;
         for (it=neig.begin(); it!=neig.end(); ++it)
@@ -197,8 +207,16 @@ public:
             im.setTo(*color,_arraySP[*it].getMask());
         }
         
+        color = new cv::Scalar( 255, 0, 0 );
+        neig = _arraySP[id].getSecondNeighbours();
+        
+        for (it=neig.begin(); it!=neig.end(); ++it)
+        {
+            im.setTo(*color,_arraySP[*it].getMask());
+        }
+        
         return im;
-    }
+    }//paintSuperpixel
 
     
     /*************************************************************************************
@@ -245,10 +263,10 @@ public:
         else
             region = _TAM_SP;
         
-        if (_DEBUG == 1) printf("Default: _TAM_SP: %d NUM_MAX_SP: %d \n NUM pixels: %d; superpixels%d\n", _TAM_SP,_NUM_MAX_SP, mat.rows*mat.cols,numSup);
+        if (_DEBUG == 1) printf("* Default: TAM: %d MAX: %d \n* %d pixels: TAM: %d MAX: %d\n", _TAM_SP,_NUM_MAX_SP, mat.rows*mat.cols,(int)region,numSup);
 
         float regularization = 10000;
-        vl_size minRegion = _TAM_SP - 5;
+        vl_size minRegion = region - 5;
         
         vl_slic_segment(segmentation, image, width, height, channels, region, regularization, minRegion);
         
@@ -339,6 +357,7 @@ public:
     
     /*************************************************************************************
      * loadSLICSuperpixels
+     *
      */
     void loadSuperPixels(string path)
     { //printf("To-Do: not implemented yet");}//loadSuperPixels
@@ -367,6 +386,7 @@ public:
         }catch(int e){
             printf("Exception!");}
     }
+    
     
     /*************************************************************************************
      * calculateBoundariesSuperpixels()
@@ -427,10 +447,7 @@ public:
         
         // NEIGHBOUGRS
         
-        Mat lab;
-        cvtColor(_image,lab, CV_BGR2Lab);
-        
-        //boundaries in _sobel
+        //first boundaries in _sobel
         for (int x = 0; x < _sobel.rows; x++)
         {
             for (int y = 0; y < _sobel.cols; y++)
@@ -463,7 +480,9 @@ public:
                             ){
                                 //add neighbours
                                 int v = (int)_ids.at<float>(i,j);
-                                _arraySP[id].addNeighbour(v);
+                                _arraySP[id].addFirstNeighbour(v);
+                                
+                                
                             }//if neighbours
                         }//for j
                     }//for i
@@ -471,8 +490,26 @@ public:
             }//for y
         }//for x
         
-        
-        
+        //second boundaries
+        for (int id=0; id < maxID+1; id++)
+        {
+            set<int> neig1 = _arraySP[id].getFirstNeighbours();
+            set<int>::iterator it1;
+            for (it1=neig1.begin(); it1!=neig1.end(); ++it1)
+            {
+                int v1 = (*it1);
+                set<int> neig2 = _arraySP[v1].getFirstNeighbours();
+                set<int>::iterator it2;
+                for (it2=neig2.begin(); it2!=neig2.end(); ++it2)
+                {
+                    int v2 = (*it2);
+                    bool is_in = neig1.find(v2) != neig1.end();
+                    if (!is_in && v2 != id)
+                        _arraySP[id].addSecondNeighbours(v2);
+                }//for it2
+            }//for it1
+        }//for id
+
         //MORE DESCRIPTORS
         
     }

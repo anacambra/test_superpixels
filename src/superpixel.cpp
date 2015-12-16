@@ -21,8 +21,8 @@ class SuperPixel
     int _label;
     
     //neighbour ids
-    set<int> _neighbours;
-    
+    set<int> _firstNeighbours;
+    set<int> _secondNeighbours;
     
 /*    MatND hist_l;
     float l_median;
@@ -64,8 +64,13 @@ class SuperPixel
     int getLabel(){ return _label;}
     Mat getMask(){ return _mask;}
     
-    set<int> getNeighbours(){ return _neighbours;}    
-    void addNeighbour(int n){ if (_id != n) {_neighbours.insert(n);printf("id: %d  v: %d \n",_id, n);}}
+    //first neighbours
+    set<int> getFirstNeighbours(){ return _firstNeighbours;}
+    void addFirstNeighbour(int n){ if (_id != n) _firstNeighbours.insert(n);}
+    
+    //second neighbours
+    set<int> getSecondNeighbours(){ return _secondNeighbours;}
+    void addSecondNeighbours(int n){ if (_id != n) _secondNeighbours.insert(n);}
     
     string toString(){ return "ID: " + to_string(_id) + " numPixels: " +to_string(_numPixels) + " label: " + to_string(_label);}
     
