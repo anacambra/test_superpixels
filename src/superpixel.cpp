@@ -26,8 +26,11 @@ class SuperPixel
     
     MatND _labelHist;
     
-/*    MatND hist_l;
-    float l_median;
+    MatND hist_l;
+    MatND hist_a;
+    MatND hist_b;
+    
+/*    float l_median;
     float l_mean;
     float l_std;
     
@@ -86,7 +89,7 @@ class SuperPixel
     //LABELS
     void setLabel(int l){_label = l;}
     
-    void create_labelHist(Mat labels, int NUMLABELS)
+    int create_labelHist(Mat labels, int NUMLABELS)
     {
         int nbins = NUMLABELS; //  NUMLABELS levels
         int hsize[] = { nbins }; // just one dimension
@@ -96,11 +99,19 @@ class SuperPixel
         int chnls[] = {0};
         calcHist(&labels, 1, chnls, _mask, _labelHist,1,hsize,ranges);
         
-        /*for( int h = 0; h < nbins; h++ )
+        for( int h = 0; h < nbins; h++ )
         {
             float binVal = _labelHist.at<float>(h);
             printf("%d %f\n",h,binVal);
-        }*/
+        }
+        
+        /*double maxVal=0;
+        Point maxBin;
+        minMaxLoc(_labelHist, 0, &maxVal, 0, &maxBin);
+        
+        printf("MAX: %f %d %d\n",maxVal,maxBin.x, maxBin.y);*/
+        //MODA: bin = maxBin.y
+        
         
         //select the median bin
         int medianValue = (_numPixels/2)+1;
@@ -116,22 +127,95 @@ class SuperPixel
         _label = (b - 1);
         
         
+        return (b-1);
+        
+        
     }//create_labelHist
 
     /***************/
     //DESCRIPTORS
     /***************/
+    
+    void descriptors(Mat image, Mat *dvec)
+    {
+        //show
+        Mat image_out;
+        cvtColor(image, image_out, CV_BGR2Lab);
+        
+        vector<Mat> spl;
+
+        split(image_out,spl);
+        
+       // double max, min;
+        //L <- L * 255/100 ; a <- a + 128 ; b <- b + 128
+        
+       /* minMaxLoc(spl[0], &min, &max, 0, 0);
+        printf("%f L %f\n",min* 100/255,max* 100/255);
+        minMaxLoc(spl[1], &min, &max, 0, 0);
+        printf("%f a %f\n",min-127,max-127);
+        minMaxLoc(spl[2], &min, &max, 0, 0);
+        printf("%f b %f\n",min-127,max-127);*/
+        
+        //0 < L < 100
+        int nbins = 100; // levels
+        int hsize[] = { nbins }; // just one dimension
+        
+        float range[] = { 0, (const float)(nbins - 1) };
+        const float *ranges[] = { range };
+        int chnls[] = {0};
+        
+        spl[0]=spl[0] * 100/255;
+        
+        calcHist(&spl[0], 1, chnls, _mask, hist_l,1,hsize,ranges);
+        
+        for(int h = 0; h < nbins; h++ )
+        {
+            float binVal = hist_l.at<float>(h);           
+            dvec->at<float>(0,h)=binVal;
+           // printf("%f ",binVal);
+        }
+        
+       // spl[1]=spl[1] - 128;
+    /*    calcHist(&spl[1], 1, chnls, _mask, hist_a,1,hsize,ranges);
+        
+        for( int h = 0; h < nbins; h++ )
+        {
+            float binVal = hist_a.at<float>(h);
+            printf("%f ",binVal);
+        }
+        
+        //spl[2]=spl[2] - 128;
+        
+        calcHist(&spl[2], 1, chnls, _mask, hist_b,1,hsize,ranges);
+        
+        for( int h = 0; h < nbins; h++ )
+        {
+            float binVal = hist_b.at<float>(h);
+            printf("%f ",binVal);
+        }
+        */
+        Mat out;
+        cvtColor(_mask,out,CV_GRAY2BGR);
+        bitwise_and(image, out, out);
+        imshow("out",out);//l
+       // waitKey(0);//*/
+        
+    
+        
+    }
     //meanColor RGB
     //histogram color RGB, LAB, edges
+    
     
     //VECINOS
     
     
     /***************************************/
     
-    Mat paintHistogram (){//(MatND hist){
+    Mat paintHistogram (MatND hist)
+    {
         
-        MatND hist = _labelHist.clone();
+       // MatND hist = _labelHist.clone();
         
         // Plot the histogram
 

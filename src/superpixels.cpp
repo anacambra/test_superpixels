@@ -13,10 +13,13 @@
 using namespace cv;
 
 #include "superpixel.cpp"
+#include "labelSet.cpp"
 
 //vlfeat
 #include "vl/generic.h"
 #include "vl/slic.h"
+
+#include <opencv2/ml/ml.hpp>
 
 
 using namespace std;
@@ -27,11 +30,12 @@ class SuperPixels
     Mat _image; // original image in color BGR
     Mat _ids; // superpixels ids  CV_8UC1
     Mat _sobel; //MASK superpixel boundaries  UCHAR
+    Mat _labelsInput; //input labeling
     
     Mat _labels; // labeling CV_32FC1
     
     // superpixels params
-    int _TAM_SP = 40;
+    int _TAM_SP = 60;
     int _NUM_MAX_SP = 700;
     
     SuperPixel *_arraySP;
@@ -164,9 +168,6 @@ public:
         return im;
     }//paintSuperpixel
     
-    
-
-    
     /*************************************************************************************
      * calculateSLICSuperpixels
      *
@@ -243,7 +244,8 @@ public:
                 label = labels[i][j];
 
                 if (label >= maxID) maxID=label;
-                _ids.at<float>(i,j)=(float)label;
+                //printf("label %d \n",label);
+                _ids.at<uchar>(i,j)=label;
                 
                 
                 labelTop = label;
@@ -291,7 +293,7 @@ public:
             for(int i=0;i<h;i++)
                 for (int j=0; j<w; j++)
                 {
-                    int id = (int)_ids.at<float>(i,j);
+                    int id = _ids.at<uchar>(i,j);
                     fwrite(&id, sizeof id, 1, f);
                 }
             
@@ -316,7 +318,7 @@ public:
         try{
             f = fopen(path.c_str(),"rb");
             h=_image.rows; w=_image.cols;
-             _ids= Mat::zeros(h,w,CV_32FC1);
+             _ids= Mat::zeros(h,w,CV_8UC1);
             
             for(int i=0;i<h;i++)
                 for (int j=0; j<w; j++)
@@ -325,7 +327,7 @@ public:
                         int id;
                         fread(&id,sizeof(int),1,f);
                         if (id >= maxID) maxID = id;
-                        _ids.at<float>(i,j)=(float)id;
+                        _ids.at<uchar>(i,j)=id;
                         //printf("%d %d %d\n",i,j,(int)_ids.at<float>(i,j));
                     }
             
@@ -384,7 +386,7 @@ public:
             for(int i=0; i<=maxID; i++ )
             {
                 Mat mask_sp;
-                mask_sp = (_ids == (float)i);
+                mask_sp = (_ids == i);
                 _arraySP[i].initialize(i,mask_sp, -1);
             }
         }
@@ -402,7 +404,7 @@ public:
             {
                 if ( _sobel.at<uchar>(x,y) == 255) //boundarie
                 {
-                    int id = (int)_ids.at<float>(x,y);
+                    int id = (int)_ids.at<uchar>(x,y);
                     
                     //8-neighbours
                     for (int i=(x-1); i<=(x+1) ; i++)
@@ -427,7 +429,7 @@ public:
                              ((i == (x)) && (j == (y+1))) )//*/
                             ){
                                 //add neighbours
-                                int v = (int)_ids.at<float>(i,j);
+                                int v = (int)_ids.at<uchar>(i,j);
                                 _arraySP[id].addFirstNeighbour(v);
                                 
                                 
@@ -462,26 +464,108 @@ public:
         
     }
     
+    void calculateDescriptors()
+    {
+        
+        int nSAMPLES = 4;
+        //int numDesc = 100 + 255 + 255;
+        Mat trainingData = Mat::zeros(nSAMPLES,100,CV_32FC1);
+        
+        Mat l0 = Mat::zeros(1,100,CV_32FC1);
+        _arraySP[2].descriptors(_image,&l0);
+        
+        //l0.row(0).copyTo(trainingData.row(0));
+        l0.row(0).copyTo(trainingData.row(0));
+        
+      //  for( int h = 0; h < 100; h++ )
+            // printf("%d ", trainingData.at<uchar>(0,h));
+        
+        
+       // Mat l1 = Mat::zeros(1,100,CV_8UC1);
+        _arraySP[1].descriptors(_image,&l0);
+        
+        //l0.row(0).copyTo(trainingData.row(0));
+        l0.row(0).copyTo(trainingData.row(1));
+        
+        //for( int h = 0; h < 100; h++ )
+          //  printf("%d ", trainingData.at<uchar>(1,h));
+        
+        _arraySP[0].descriptors(_image,&l0);
+        
+        //l0.row(0).copyTo(trainingData.row(0));
+        l0.row(0).copyTo(trainingData.row(2));
+        
+        _arraySP[8].descriptors(_image,&l0);
+        //l0.row(0).copyTo(trainingData.row(0));
+        l0.row(0).copyTo(trainingData.row(3));
+        //for( int h = 0; h < 100; h++ )
+        //printf("%d ", trainingData.at<uchar>(2,h));
+        
+       
+ 
+        // Set up training data
+        float labels[4] = {0.0, 0.0, 1.0, 1.0};
+        Mat labelsMat(nSAMPLES, 1, CV_32FC1, labels);
+        
+       // float trainingData[4][2] = { {501, 10}, {255, 10}, {501, 255}, {10, 501} };
+        Mat trainingDataMat(nSAMPLES, 100, CV_32FC1, &trainingData);
+        
+        // Set up SVM's parameters
+        CvSVMParams params;
+        params.svm_type    = CvSVM::C_SVC;
+        params.kernel_type = CvSVM::LINEAR;
+        params.term_crit   = cvTermCriteria(CV_TERMCRIT_ITER, 100, 1e-6);
+        
+        // Train the SVM
+        CvSVM SVM;
+        SVM.train(trainingDataMat, labelsMat, Mat(), Mat(), params);
+        
+        //SVM.save("svmTEXT.xml");
+       // SVM.load("svmTEXT.xml");
+        //test
+        
+        Mat l1 = Mat::zeros(1,100,CV_32FC1);
+        _arraySP[2].descriptors(_image,&l1);
+        
+        float response = SVM.predict(l1);
+        printf("RESPONSE 2  %f\n",response);waitKey(0);
+        
+        _arraySP[1].descriptors(_image,&l1);
+        response = SVM.predict(l1);
+        printf("RESPONSE 1  %f\n",response);waitKey(0);
+        
+        _arraySP[8].descriptors(_image,&l1);
+        response = SVM.predict(l1);
+        printf("RESPONSE 8  %f\n",response);waitKey(0);
+        
+        _arraySP[0].descriptors(_image,&l1);
+        response = SVM.predict(l1);
+        printf("RESPONSE 0  %f\n",response);waitKey(0);
+        
+        waitKey(0);
+        
+    }
     
     /*************************************************************************************
-     * initializLabeling()
+     * initializeLabeling()
      *
      */
-    void initializeMeanLabeling(string path)
+    Mat initializeMeanLabeling(string path)
     {
         //read image
         try{
-            _labels = imread(path,CV_LOAD_IMAGE_UNCHANGED);
-            _labels = (_labels / 255)*NUMLABELS;
+            _labelsInput = imread(path,CV_LOAD_IMAGE_UNCHANGED);
+            _labelsInput = (_labelsInput / 255)*NUMLABELS;
             
-            double min, max;
+            
+           /* double min, max;
             cv::minMaxLoc(_labels, &min, &max);
-            printf("%f %f ",min,max);
+            printf("%f %f ",min,max);//*/
                    
-            if(_labels.data == NULL)
+            if(_labelsInput.data == NULL)
             {
                 printf("Image Labeling %s not found\n",path.c_str());
-                return;
+                return Mat::zeros(100, 100, CV_8UC1);
             }
             else
                 printf("Mat _labels CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
@@ -489,160 +573,28 @@ public:
         catch(int e)
         {
             printf("Image Labeling %s not found\n",path.c_str());
-            return;
+            return Mat::zeros(100, 100, CV_8UC1);
         }
         
         for (int id=0; id < maxID+1; id++)
         {
-            _arraySP[id].create_labelHist(_labels,NUMLABELS);
+            int l=_arraySP[id].create_labelHist(_labelsInput,NUMLABELS);
+            _labels.setTo(l,_arraySP[id].getMask());
             
            /* imshow("HIST labels",_arraySP[id].paintHistogram());
             waitKey(0);//*/
         }
+        
+        //paint
+        labelSet val(NUMLABELS);
+        Mat leyend= Mat::ones(_image.rows,_image.cols, CV_8UC3);
+        Mat out = val.paintLabelRandom(_labels,NUMLABELS,&leyend).clone();//
+        
+        return out;
+
 
     }//initializLabeling
     
-    
-    
-   // void infoSuperpixels2file(std::string nameFile);
-   
-    /* Mat _depth;
-    Mat _ids;
-    Mat _imDepth;
-    Mat _pixelDepth;
-    
-    Mat _lab;
-    
-    Mat _prob[21];
-    
-    int showInfo;
-    
-    int num_eqU=0;//num unary equations
-    int num_eqBcolor=0;
-    int num_eqB=0;
-    
-    int _TAM_SP = 20;//30;//30;//35;//35;//25;
-    double w_unary=0.5;
-    double w_color=0.9;
-    
-    double _MAX_DIFF_LAB = 60;//15.0;
-    
-    int _NUM_MAX_SP = 700;//600;
-   
-    int MAX_BINARIAS=5000000;*/
-    
-    ////// Superpixels funciones
-  /*  int numCoef=3;
-    
-    Optimization::LeastSquaresLinearSystem<double> ecuaciones;
-    Optimization::LeastSquaresLinearSystem<double> unary;
-    Optimization::LeastSquaresLinearSystem<double> unaryCTE;
-    
-    Optimization::LeastSquaresLinearSystem<double> binary;
-    Optimization::LeastSquaresLinearSystem<double> binaryCOLOR;
-    Optimization::LeastSquaresLinearSystem<double> binaryGRADIENT;//
-    
-    Optimization::LeastSquaresLinearSystem<double> unaryMulti[21];
-    Optimization::LeastSquaresLinearSystem<double> unaryMultiUser[21];
-    
-    float timeU = 0.0;
-    float timeB = 0.0;
-    float timeSolve = 0.0;*/
-    
-    
-//public:
-   /* SuperPixel *arraySP;
-    Mat _sobel;
-   // Mat _pixelDepth;
-    int maxID;
-    SuperPixels(std::string path);
-    ~SuperPixels() ;
-
-    //QImage point to the data of _image
-   // QImage getImage();
-    Mat getImage();
-    Mat imageDepth();
-    Mat getMask(int id);
-    void updateDepth(Mat depth);
-    
-    //QImage mat_to_qimage_ref(Mat &mat, QImage::Format format);
-    void loadSuperPixels(std::string path);
-    void calculateSLICSuperpixels(Mat mat);
-    void loadDepth(std::string path);
-    void loadDepth(Mat input);
-    void loadUserDepth(std::string path);
-    void loadDepthBuildSystem(std::string path);
-    void loadDepthBuildSystemCoef();
-    void loadDepthBuildSystemCoef(std::string path);
-
-    Mat paintSuperpixel(int i,int y);
-    Mat paintSuperpixel(int i,int y,Scalar *color);
-    void paintSuperpixelByID(int id,int grayLevel);
-    void copyDepth(int x, int y, float depth);
-    void copySuperpixel(int x,int y, int last_x,int last_y);
-    
-    void calcularVecinos();
-   // void calcularVecinos2();
-    void calcularVecinos2(int id, int *array);
-
-    int getIdFromPixel(int x, int y);
-    int getLabel
-    /*float getMedianDepth(int x, int y);
-    float getDepthFromPixel(int x, int y);
-    float getDepthInitialFromPixel(int x, int y);
-    bool isNotNullImage();
-    bool isNotNullDepth();
-    bool isNotNullIndex();
-
-    void resetImage();
-    void paintZeroDepth();
-    void depthWithBorders();*/
-    
-   // void infoSuperpixels2file(std::string nameFile);
-
-   // float medianHistogram(MatND hist,int numPixels);
-    
-  //  MatND calHistogram(Mat m, Mat mask);
-   // void histogramLAB(int id,Mat mask);
-  /*  float cmpDepth(int a, int b, int mode);
-    float cmpLab(int a, int b, int mode);
-    float cmpLab(int a, SuperPixel b, int mode);
-    
-    float getDepth(int i);
-    float getVar(int i);
-    float getAccu(int i);
-    
-    //equations
-    void buildEquationSystem();
-    void addEquationsBinaries();
-    void addEquationsBinariesCoef();
-    void addEquationsBinariesBoundaries(bool verbose);
-    void addEquationsBinariesBoundaries2();
-    void addEquationsBinariesBoundariesCoef(bool verbose);
-    void addEquationsBinariesBoundariesCoef();
-    void addEquationsBinariesGradientCoef();
-    float similarityBinariesBoundaries(int s1, int s2);
-    void addEquationsUnaries(int id,float di);
-    void addEquationsUnaries(int x,int y,float di);
-    void addEquationsUnaries();
-    void addEquationsUnariesMulti(int l);
-    void addUnariesMultiUser(int l, int x,int y);
-    void addUnariesCoef(int x, int y, double di);
-    void addEquationsUnariesMedianCoef();
-    void addEquationsUnariesCoef();
-    void solve();
-    void solveCoef();
-    Mat solveMulti();
-    
-    void resetDepthEquations();
-    void resetDepthEquationsCoef();
-    
-    //effects
-    Mat blurImage(Mat image, Mat imageDepth, int nbins);
-    Mat blurImage(Mat image, Mat imageDepth, int nbins, double minFocus, double maxFocus,double size);
-    //code adolfo
-    Mat blurImageDepth(const cv::Mat& image, const cv::Mat& depth,
-                         int nbins, float focal_distance, float focal_length, float aperture, bool linear);*/
 
 };
 

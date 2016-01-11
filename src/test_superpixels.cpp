@@ -23,20 +23,30 @@ int main(int argc, const char * argv[]) {
     
     //init superpixels
     SPCTE->calculateBoundariesSuperpixels();
+
     SPCTE->initializeSuperpixels();
+    
+    SPCTE->calculateDescriptors();
     
     imshow("superpixels",SPCTE->getImageSuperpixels());
     
-    //inti labeling
-    SPCTE->initializeMeanLabeling(argv[2]);
     
     //check neigbour
    // Mat image
-    for (int id=0; id < SPCTE->maxID+1; id++)
+    /*for (int id=0; id < SPCTE->maxID+1; id++)
     {
         imshow("superpixels",SPCTE->paintSuperpixel(SPCTE->getImageSuperpixels(),id));
         waitKey(25);
-    }
+    }*/
+    
+    
+    //init labeling
+   /* Mat out = SPCTE->initializeMeanLabeling(argv[2]).clone();
+    
+    imshow("labels", out);*/
+    waitKey(0);
+    
+    
     
     return 0;
     
