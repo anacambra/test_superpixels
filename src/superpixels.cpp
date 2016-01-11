@@ -35,12 +35,12 @@ class SuperPixels
     Mat _labels; // labeling CV_32FC1
     
     // superpixels params
-    int _TAM_SP = 60;
+    int _TAM_SP = 40;
     int _NUM_MAX_SP = 700;
     
     SuperPixel *_arraySP;
    
-    int NUMLABELS=60;
+    int NUMLABELS;
     
     unsigned char _DEBUG = 1;
 
@@ -122,7 +122,11 @@ public:
     
     /*****************************************************************/
     /*****************************************************************/
-
+    void setNUMLABELS(int n)
+    {
+        NUMLABELS = n;
+    }
+    
     Mat getImage()
     {
         if(_image.data == NULL)
@@ -215,7 +219,7 @@ public:
         if (_DEBUG == 1) printf("* Default: TAM: %d MAX: %d \n* %d pixels: TAM: %d MAX: %d\n", _TAM_SP,_NUM_MAX_SP, mat.rows*mat.cols,(int)region,numSup);
 
         float regularization = 10000;
-        vl_size minRegion = region - 5;
+        vl_size minRegion = (int)region / 2;
         
         vl_slic_segment(segmentation, image, width, height, channels, region, regularization, minRegion);
         
@@ -464,8 +468,48 @@ public:
         
     }
     
+    //////////
+    
+    Mat cropSuperpixel(Mat image,int i, float scale = 1)
+    {
+
+        //find contourns mask
+        vector<vector<Point> > contours;
+        vector<Vec4i> hierarchy;
+        
+        /// Find contours
+        findContours( _arraySP[i].getMask(), contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
+        vector<vector<Point> > contours_poly( contours.size() );
+        vector<Rect> boundRect( contours.size() );
+        vector<Point2f>center( contours.size() );
+        vector<float>radius( contours.size() );
+        
+        for( int i = 0; i < contours.size(); i++ )
+        {
+            boundRect[i] = boundingRect( Mat(contours[i]) );
+            
+        }
+        
+        /*Mat out = image.clone();
+        Scalar color = Scalar( 255, 0, 0 );
+        rectangle( out, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0 );*/
+        
+        Mat roi = image(Rect(boundRect[0].tl().x,boundRect[0].tl().y,boundRect[0].width , boundRect[0].height));
+        Size s = roi.size();
+        resize(roi, roi, Size(s.height*scale,s.height*scale));
+        return roi;
+        
+    }//cropSuperpixel
+    
+    
+    
+    
+    
+    /////////////
     void calculateDescriptors()
     {
+        
+        
         
         int nSAMPLES = 4;
         //int numDesc = 100 + 255 + 255;
@@ -555,11 +599,10 @@ public:
         //read image
         try{
             _labelsInput = imread(path,CV_LOAD_IMAGE_UNCHANGED);
-            _labelsInput = (_labelsInput / 255)*NUMLABELS;
+            _labelsInput = (_labelsInput * (NUMLABELS - 1)/ 255) ;
             
-            
-           /* double min, max;
-            cv::minMaxLoc(_labels, &min, &max);
+            double min, max;
+            cv::minMaxLoc(_labelsInput, &min, &max);
             printf("%f %f ",min,max);//*/
                    
             if(_labelsInput.data == NULL)
@@ -581,8 +624,6 @@ public:
             int l=_arraySP[id].create_labelHist(_labelsInput,NUMLABELS);
             _labels.setTo(l,_arraySP[id].getMask());
             
-           /* imshow("HIST labels",_arraySP[id].paintHistogram());
-            waitKey(0);//*/
         }
         
         //paint

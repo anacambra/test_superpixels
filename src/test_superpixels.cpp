@@ -14,17 +14,47 @@
 
 int main(int argc, const char * argv[]) {
     
-    //SuperPixels *SP;
     SuperPixels *SPCTE;
     
     string nameImage = argv[1];
     
     SPCTE = new SuperPixels(nameImage);
+   
+    //boundaries betweenSP
+    SPCTE->calculateBoundariesSuperpixels();
     
     //init superpixels
-    SPCTE->calculateBoundariesSuperpixels();
-
     SPCTE->initializeSuperpixels();
+    
+    //labels
+   // imshow("superpixels",SPCTE->getImageSuperpixels());
+   // imshow("in labels",imread(argv[2]));
+           
+    
+    //TEXT LABELS
+    SPCTE->setNUMLABELS(60);
+    //init labeling
+    Mat out = SPCTE->initializeMeanLabeling(argv[2]).clone();
+    imshow("labels", out);
+    
+    //check superpixel
+    for (int id=0; id < SPCTE->maxID+1; id++)
+    {
+        imshow("crop in labels", SPCTE->cropSuperpixel(imread(argv[2]),id,3));
+        imshow("crop labels",SPCTE->cropSuperpixel(out,id,3));
+        imshow("crop image",SPCTE->cropSuperpixel(SPCTE->getImage(),id,3));
+        
+        
+        
+        waitKey(0);
+    }//*/
+    
+    
+    
+    
+    
+    
+    
     
     SPCTE->calculateDescriptors();
     

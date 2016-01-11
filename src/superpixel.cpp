@@ -97,6 +97,8 @@ class SuperPixel
         float range[] = { 0, (const float)(NUMLABELS - 1) };
         const float *ranges[] = { range };
         int chnls[] = {0};
+        
+        
         calcHist(&labels, 1, chnls, _mask, _labelHist,1,hsize,ranges);
         
         for( int h = 0; h < nbins; h++ )
@@ -124,10 +126,15 @@ class SuperPixel
             count += (int) value;
         }
         
+        //if bin max==background pero! hay otro bin=> asignar el otro bin!
+        
         _label = (b - 1);
         
         
         return (b-1);
+        
+        imshow("HIST labels",paintHistogram(_labelHist));
+        waitKey(0);//*/
         
         
     }//create_labelHist
@@ -234,6 +241,7 @@ class SuperPixel
         
         return histImage;
     }//paintHistogram
+    
 
 };
 
