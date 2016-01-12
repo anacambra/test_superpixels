@@ -21,6 +21,9 @@ using namespace std;
 
 class labelSet
 {
+    //pascal
+    const string pascal[21]= {"background","aeroplane", "bicycle", "bird", "boat","bottle","bus","car","cat","chair","cow","table","dog","horse",
+        "motorbike","person","pottedplant","sheep","sofa","train","tvmonitor"};
     //pascal-context
     const string pascalcontext[60]= { "background ","aeroplane", "bicycle", "bird", "boat","bottle","bus","car","cat","chair","cow","table","dog","horse",
         "motorbike","person","pottedplant","sheep","sofa","train","tvmonitor",
@@ -42,6 +45,8 @@ public:
         
         if (NUMLABELS == 60)
             copy(pascalcontext, pascalcontext+NUMLABELS, _labels);
+        else if (NUMLABELS == 21)
+            copy(pascal, pascal+NUMLABELS, _labels);
         else if (NUMLABELS == 2)
             copy(text, text+2,_labels);
     };

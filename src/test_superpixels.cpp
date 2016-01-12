@@ -32,10 +32,10 @@ int main(int argc, const char * argv[]) {
            
     
     //TEXT LABELS
-    SPCTE->setNUMLABELS(60);
+    SPCTE->setNUMLABELS(2);
     //init labeling
     Mat out = SPCTE->initializeMeanLabeling(argv[2]).clone();
-    imshow("labels", out);
+    imshow("labels", imread(argv[2]));
     
     //check superpixel
     for (int id=0; id < SPCTE->maxID+1; id++)
@@ -71,9 +71,10 @@ int main(int argc, const char * argv[]) {
     
     
     //init labeling
-   /* Mat out = SPCTE->initializeMeanLabeling(argv[2]).clone();
+    //Mat out = SPCTE->initializeMeanLabeling(argv[2]).clone();
     
-    imshow("labels", out);*/
+    //imshow("labels", out);
+    
     waitKey(0);
     
     
