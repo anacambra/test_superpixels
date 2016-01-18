@@ -57,7 +57,7 @@ public:
     Mat paintLabelRandom(Mat label, int numLabels,Mat *leyend)
     {
         int t=0,f=0;
-        Mat bgr = Mat(label.rows, label.cols, CV_8UC3);
+        Mat bgr = Mat::zeros(label.rows, label.cols, CV_8UC3);
         RNG rng(0);
         Scalar color;
         

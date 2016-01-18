@@ -21,6 +21,10 @@ using namespace cv;
 
 #include <opencv2/ml/ml.hpp>
 
+#include <iostream>
+#include <sstream>
+#include <fstream>
+
 
 using namespace std;
 
@@ -38,8 +42,6 @@ class SuperPixels
     int _TAM_SP = 40;
     int _NUM_MAX_SP = 700;
     
-    SuperPixel *_arraySP;
-   
     int NUMLABELS;
     
     unsigned char _DEBUG = 1;
@@ -47,6 +49,7 @@ class SuperPixels
     
 public:
     
+    SuperPixel *_arraySP;
     int maxID;
     
     SuperPixels(){ maxID=0; }
@@ -76,7 +79,7 @@ public:
             else
                 printf("Mat _image CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
             
-            _ids= Mat::zeros(_image.rows,_image.cols,CV_8UC1);
+            _ids= Mat::zeros(_image.rows,_image.cols,CV_32FC1);
             _sobel= Mat::zeros(_image.rows,_image.cols,CV_8UC1);
             _labels= Mat::ones(_ids.rows,_ids.cols,CV_32FC1)*-1;
         }
@@ -87,7 +90,7 @@ public:
         }
         
         size_t found = path.find_last_of(".");
-        string name = path.substr(0,found) + "_" + to_string(_TAM_SP)+".sp";
+        string name = path.substr(0,found) + "_" + to_string(_TAM_SP)+".csv";
         FILE *f = fopen(name.c_str(),"r");
         
         if (f!=NULL)
@@ -105,6 +108,7 @@ public:
         {
             if (_DEBUG == 1) start = clock();
             
+            //To-Do: ./slic_cli  --input test_image/ --contour --superpixels 100 --csv
             calculateSLICSuperpixels(_image);
             
             if (_DEBUG == 1) printf("**** TIME: calculate Superpixels: %f seconds\n ",(float) (((double)(clock() - start)) / CLOCKS_PER_SEC) );
@@ -127,6 +131,7 @@ public:
         NUMLABELS = n;
     }
     
+    Mat getImageLabels() {return _labels;}
     Mat getImage()
     {
         if(_image.data == NULL)
@@ -249,7 +254,7 @@ public:
 
                 if (label >= maxID) maxID=label;
                 //printf("label %d \n",label);
-                _ids.at<uchar>(i,j)=label;
+                _ids.at<float>(i,j)=(float)label;
                 
                 
                 labelTop = label;
@@ -297,7 +302,7 @@ public:
             for(int i=0;i<h;i++)
                 for (int j=0; j<w; j++)
                 {
-                    int id = _ids.at<uchar>(i,j);
+                    int id =(int) _ids.at<float>(i,j);
                     fwrite(&id, sizeof id, 1, f);
                 }
             
@@ -314,31 +319,61 @@ public:
      *
      */
     void loadSuperPixels(string path)
-    { //printf("To-Do: not implemented yet");}//loadSuperPixels
+    { 
         FILE *f;
         int w=0,h=0;
         maxID = 0;
         
-        try{
-            f = fopen(path.c_str(),"rb");
+        ifstream file (path);
+        string current_line;        
+        
+        int i=0;
+        int j=0;
+        
+        while(getline(file, current_line)){
+            // Now inside each line we need to seperate the cols
+            stringstream temp(current_line);
+            string single_value;
+            while(getline(temp,single_value,',')){
+                int id =  atoi(single_value.c_str());
+                if (id >= maxID) maxID = id;
+                 _ids.at<float>(i,j)=(float)id;
+                j=j+1;
+                if (j == _image.cols)
+                {
+                    i= i + 1;
+                    j = 0;
+                }
+            }
+        }
+        
+        
+        
+       /* try{
+           // f = fopen(path.c_str(),"rb");
             h=_image.rows; w=_image.cols;
-             _ids= Mat::zeros(h,w,CV_8UC1);
+            _ids= Mat::zeros(h,w,CV_32FC1);
             
             for(int i=0;i<h;i++)
                 for (int j=0; j<w; j++)
-                    if(!feof(f))
+                    //if(!feof(f))
                     {
                         int id;
-                        fread(&id,sizeof(int),1,f);
+                       // fread(&id,sizeof(int),1,f);
+                        getline ( file, value, ',' );
+                        printf("%s.",value.c_str());
+                        id = atoi(value.c_str());
+                        
                         if (id >= maxID) maxID = id;
-                        _ids.at<uchar>(i,j)=id;
-                        //printf("%d %d %d\n",i,j,(int)_ids.at<float>(i,j));
+                        _ids.at<float>(i,j)=(float)id;
+                        
+                        //printf("%d %d %s %d\n",i,j,value.c_str() , atoi(value.c_str()));//(int)_ids.at<float>(i,j));
                     }
             
-            fclose(f);
+           // fclose(f);
             
         }catch(int e){
-            printf("Exception!");}
+            printf("Exception!");}*/
     }
     
     
@@ -393,6 +428,8 @@ public:
                 mask_sp = (_ids == i);
                 _arraySP[i].initialize(i,mask_sp, -1);
             }
+            
+             printf("MAX superpixels %d \n",maxID);
         }
         else{
             printf("_ids superpixels NULL \n");
@@ -408,7 +445,7 @@ public:
             {
                 if ( _sobel.at<uchar>(x,y) == 255) //boundarie
                 {
-                    int id = (int)_ids.at<uchar>(x,y);
+                    int id = (int)_ids.at<float>(x,y);
                     
                     //8-neighbours
                     for (int i=(x-1); i<=(x+1) ; i++)
@@ -433,7 +470,7 @@ public:
                              ((i == (x)) && (j == (y+1))) )//*/
                             ){
                                 //add neighbours
-                                int v = (int)_ids.at<uchar>(i,j);
+                                int v = (int)_ids.at<float>(i,j);
                                 _arraySP[id].addFirstNeighbour(v);
                                 
                                 
@@ -470,45 +507,123 @@ public:
     
     //////////
     
-    Mat cropSuperpixel(Mat image,int i, float scale = 1)
+    Mat cropSuperpixel(Mat img,int id, float scale = 1)
     {
+        Mat nonZeroCoordinates;
+        findNonZero( _arraySP[id].getMask(), nonZeroCoordinates);
+        
+        double minX=img.cols, minY=img.rows, maxX=0.0,maxY=0.0;
 
-        //find contourns mask
-        vector<vector<Point> > contours;
-        vector<Vec4i> hierarchy;
-        
-        /// Find contours
-        findContours( _arraySP[i].getMask(), contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
-        vector<vector<Point> > contours_poly( contours.size() );
-        vector<Rect> boundRect( contours.size() );
-        vector<Point2f>center( contours.size() );
-        vector<float>radius( contours.size() );
-        
-        for( int i = 0; i < contours.size(); i++ )
+        for (int i = 0; i < nonZeroCoordinates.total(); i++ )
         {
-            boundRect[i] = boundingRect( Mat(contours[i]) );
+            if (nonZeroCoordinates.at<Point>(i).x <= minX) minX = nonZeroCoordinates.at<Point>(i).x;
+            else if (nonZeroCoordinates.at<Point>(i).x >= maxX) maxX =  nonZeroCoordinates.at<Point>(i).x;
             
+            if (nonZeroCoordinates.at<Point>(i).y <= minY) minY = nonZeroCoordinates.at<Point>(i).y;
+            else if (nonZeroCoordinates.at<Point>(i).y >= maxY) maxY =  nonZeroCoordinates.at<Point>(i).y;
         }
         
-        /*Mat out = image.clone();
+       /* Mat out;
+        img.copyTo(out);
         Scalar color = Scalar( 255, 0, 0 );
-        rectangle( out, boundRect[0].tl(), boundRect[0].br(), color, 2, 8, 0 );*/
+        rectangle( out, Point(minX,minY), Point(maxX,maxY), color, -1, 8, 0);
+
+        imshow("REC",out);//*/
+        //return out;
+        //*/
         
-        Mat roi = image(Rect(boundRect[0].tl().x,boundRect[0].tl().y,boundRect[0].width , boundRect[0].height));
+        Mat roi = img(Rect(minX,minY,maxX-minX, maxY-minY)).clone();
+        Mat mask =_arraySP[id].getMask();
+        Mat roiMask = mask(Rect(minX,minY,maxX-minX, maxY-minY)).clone();
+        cvtColor(roiMask,roiMask,CV_GRAY2BGR);
         Size s = roi.size();
+        bitwise_and(roi,roiMask, roi);
+        
         resize(roi, roi, Size(s.height*scale,s.height*scale));
-        return roi;
+
+        return roi;//*/
         
     }//cropSuperpixel
     
-    
-    
-    
-    
+
     /////////////
-    void calculateDescriptors()
+    Mat calculateDescriptors(int i, Mat image,
+                              int mLAB   = 0, int NBINS_L     = 50, int NBINS_AB=128,
+                              int mRGB   = 0, int NBINS_RGB   = 256,
+                              int mPEAKS = 1, int NBINS_PEAKS = 64)
     {
+        Mat des;
         
+        if (mLAB != 0)
+        {
+            des=_arraySP[i].descriptorsLAB(image,NBINS_L,NBINS_AB).clone();
+        }
+        
+        if (mRGB != 0)
+        {
+            if (des.rows != 0)
+                hconcat(_arraySP[i].descriptorsRGB(image,NBINS_RGB), des,des);
+            else
+                des=_arraySP[i].descriptorsRGB(image,NBINS_RGB).clone();
+        }
+        
+        if (mPEAKS != 0)
+        {
+            if (des.rows != 0)
+                hconcat(_arraySP[i].descriptorsPEAKS(image,NBINS_PEAKS), des,des);
+            else
+                des=_arraySP[i].descriptorsPEAKS(image,NBINS_PEAKS).clone();
+        }
+        
+        /*for (int i=0; i< des.cols; i++) {
+         printf("%d %f\n",i,des.at<float>(i));
+         }//*/
+        
+        
+        return des;
+        
+        
+        /*if (mLAB != 0) && () && ()
+            if (mRGB != 0)
+               hconcat(_arraySP[i].descriptorsLAB(_image,NBINS_L,NBINS_AB), _arraySP[i].descriptorsRGB(_image,NBINS_RGB), des);
+            else if (mPEAKS != 0)
+                hconcat
+                else
+                    /*
+        else
+            //mLAB 0
+            
+        
+        _arraySP[i].descriptorsPEAKS(_image,64);
+        
+        
+        Mat test;
+        // Mat d_lab = _arraySP[2].descriptorsLAB(_image).clone();
+        
+        hconcat(_arraySP[i].descriptorsLAB(_image), _arraySP[i].descriptorsRGB(_image), test);
+        
+        //cout << test.rows << " " << test.cols  << "->" << 101+256+256+256+256+256<< endl;
+        
+        /*for (int i=0; i< test.cols; i++) {
+            printf("%d %f\n",i,test.at<float>(i));
+        }//*/
+        return;
+        
+       // Mat test = Mat::zeros(1,10,CV_32FC1);
+    
+    /*   Mat A = (Mat_<float>(1, 3) << 1, 2, 3);
+        Mat B = (Mat_<float>(1, 3) << 4, 5, 6);
+        Mat C = (Mat_<float>(1, 3) << 7, 8, 9);
+        Mat D = (Mat_<float>(1, 1) << 10);
+       
+        hconcat(A, B, test);
+        hconcat(test, C, test);
+        hconcat(test, D, test);
+        
+        cout << "M = "<< test << "->" << 101+256+256+256+256+256<< endl;*/
+        
+        // LAB
+        Mat ld_lab = Mat::zeros(1,100+255+255,CV_32FC1);
         
         
         int nSAMPLES = 4;
@@ -516,7 +631,7 @@ public:
         Mat trainingData = Mat::zeros(nSAMPLES,100,CV_32FC1);
         
         Mat l0 = Mat::zeros(1,100,CV_32FC1);
-        _arraySP[2].descriptors(_image,&l0);
+       // _arraySP[2].descriptors(_image,&l0);
         
         //l0.row(0).copyTo(trainingData.row(0));
         l0.row(0).copyTo(trainingData.row(0));
@@ -526,7 +641,7 @@ public:
         
         
        // Mat l1 = Mat::zeros(1,100,CV_8UC1);
-        _arraySP[1].descriptors(_image,&l0);
+      //  _arraySP[1].descriptors(_image,&l0);
         
         //l0.row(0).copyTo(trainingData.row(0));
         l0.row(0).copyTo(trainingData.row(1));
@@ -534,12 +649,12 @@ public:
         //for( int h = 0; h < 100; h++ )
           //  printf("%d ", trainingData.at<uchar>(1,h));
         
-        _arraySP[0].descriptors(_image,&l0);
+      //  _arraySP[0].descriptors(_image,&l0);
         
         //l0.row(0).copyTo(trainingData.row(0));
         l0.row(0).copyTo(trainingData.row(2));
         
-        _arraySP[8].descriptors(_image,&l0);
+     //   _arraySP[8].descriptors(_image,&l0);
         //l0.row(0).copyTo(trainingData.row(0));
         l0.row(0).copyTo(trainingData.row(3));
         //for( int h = 0; h < 100; h++ )
@@ -569,20 +684,20 @@ public:
         //test
         
         Mat l1 = Mat::zeros(1,100,CV_32FC1);
-        _arraySP[2].descriptors(_image,&l1);
+       // _arraySP[2].descriptors(_image,&l1);
         
         float response = SVM.predict(l1);
         printf("RESPONSE 2  %f\n",response);waitKey(0);
         
-        _arraySP[1].descriptors(_image,&l1);
+      //  _arraySP[1].descriptors(_image,&l1);
         response = SVM.predict(l1);
         printf("RESPONSE 1  %f\n",response);waitKey(0);
         
-        _arraySP[8].descriptors(_image,&l1);
+     //   _arraySP[8].descriptors(_image,&l1);
         response = SVM.predict(l1);
         printf("RESPONSE 8  %f\n",response);waitKey(0);
         
-        _arraySP[0].descriptors(_image,&l1);
+     //   _arraySP[0].descriptors(_image,&l1);
         response = SVM.predict(l1);
         printf("RESPONSE 0  %f\n",response);waitKey(0);
         
@@ -594,14 +709,14 @@ public:
      * initializeLabeling()
      *
      */
-    Mat initializeMeanLabeling(string path)
+    Mat initializeLabeling(string path, int mode = MODE_LABEL_MEDIAN)
     {
         //read image
         try{
             _labelsInput = imread(path,CV_LOAD_IMAGE_UNCHANGED);
             _labelsInput = (_labelsInput * (NUMLABELS - 1)/ 255) ;
-            
-            double min, max;
+
+           /*double min, max;
             cv::minMaxLoc(_labelsInput, &min, &max);
             printf("%f %f ",min,max);//*/
                    
@@ -618,21 +733,19 @@ public:
             printf("Image Labeling %s not found\n",path.c_str());
             return Mat::zeros(100, 100, CV_8UC1);
         }
-        
+        Mat im;
         for (int id=0; id < maxID+1; id++)
         {
-            int l=_arraySP[id].create_labelHist(_labelsInput,NUMLABELS);
+            int l = _arraySP[id].create_labelHist(_labelsInput,NUMLABELS,mode);
             _labels.setTo(l,_arraySP[id].getMask());
-            
         }
-        
+
         //paint
         labelSet val(NUMLABELS);
         Mat leyend= Mat::ones(_image.rows,_image.cols, CV_8UC3);
-        Mat out = val.paintLabelRandom(_labels,NUMLABELS,&leyend).clone();//
+        Mat out = val.paintLabelRandom(_labels,NUMLABELS,&leyend);
         
         return out;
-
 
     }//initializLabeling
     
