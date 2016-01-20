@@ -40,18 +40,25 @@ cmake_minimum_required(VERSION 2.8.9)
   ##################################################################################
 
   include_directories(libs)
+  include_directories(libs/lib_slic)
   include_directories(${VLFEAT_INCLUDE_DIRS})
+
+find_package(Boost COMPONENTS system filesystem program_options REQUIRED)
 
   ##################################################################################
   #     src
   ##################################################################################
+  add_library(slic libs/lib_slic/SLIC.cpp)
 
   add_executable(${PROJECT_NAME}  
         src/superpixel.cpp
         src/superpixels.cpp
+        src/labelSet.cpp
         src/test_superpixels.cpp)
 
-  target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${VLFEAT_LIBRARIES}/libvl.dylib)
+
+
+  target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${VLFEAT_LIBRARIES}/libvl.dylib slic ${Boost_LIBRARIES})
 
   file(COPY ${VLFEAT_LIBRARIES}/libvl.dylib DESTINATION ${CMAKE_BINARY_DIR}/Debug)
 

@@ -25,6 +25,8 @@ using namespace cv;
 #include <sstream>
 #include <fstream>
 
+#include "lib_slic/SLIC.h"
+
 
 using namespace std;
 
@@ -39,7 +41,7 @@ class SuperPixels
     Mat _labels; // labeling CV_32FC1
     
     // superpixels params
-    int _TAM_SP = 40;
+    int _TAM_SP = 35;
     int _NUM_MAX_SP = 700;
     
     int NUMLABELS;
@@ -90,7 +92,7 @@ public:
         }
         
         size_t found = path.find_last_of(".");
-        string name = path.substr(0,found) + "_" + to_string(_TAM_SP)+".csv";
+        string name = path.substr(0,found) + "_" + to_string(_TAM_SP)+".sp";
         FILE *f = fopen(name.c_str(),"r");
         
         if (f!=NULL)
@@ -184,7 +186,59 @@ public:
      *      fill : _ids, maxID
      *      limit total number of superpixels (maxID+1)
      */
-    void calculateSLICSuperpixels(Mat mat){
+    void calculateSLICSuperpixels(Mat mat)
+    {
+        // Convert matrix to unsigned int array.
+        unsigned int* image = new unsigned int[mat.rows*mat.cols];
+        unsigned int value = 0x0000;
+        
+        for (int i = 0; i < mat.rows; ++i) {
+            for (int j = 0; j < mat.cols; ++j) {
+                
+                int b = mat.at<cv::Vec3b>(i,j)[0];
+                int g = mat.at<cv::Vec3b>(i,j)[1];
+                int r = mat.at<cv::Vec3b>(i,j)[2];
+                
+                value = 0x0000;
+                value |= (0x00FF0000 & (r << 16));
+                value |= (0x0000FF00 & (b << 8));
+                value |= (0x000000FF & g);
+                
+                image[j + mat.cols*i] = value;
+            }
+        }
+        
+        SLIC slic;
+        
+        int* segmentation = new int[mat.rows*mat.cols];
+        int numberOfLabels = 0;
+        
+        //timer.restart();
+        int superpixels = sqrt(float(mat.rows*mat.cols)/_TAM_SP);
+        if (superpixels > _NUM_MAX_SP) superpixels = _NUM_MAX_SP;
+    
+        double compactness = 40;
+        bool perturbseeds = false;
+        int iterations = 10;
+        
+        slic.DoSuperpixelSegmentation_ForGivenNumberOfSuperpixels(image, mat.cols, mat.rows, segmentation, numberOfLabels, superpixels, compactness, perturbseeds, iterations);
+        
+        // Convert labels.
+        int** labels = new int*[mat.rows];
+        for (int i = 0; i < mat.rows; ++i) {
+            labels[i] = new int[mat.cols];
+            
+            for (int j = 0; j < mat.cols; ++j) {
+                labels[i][j] = segmentation[j + i*mat.cols];
+                if (labels[i][j] >= maxID) maxID=labels[i][j];
+                //printf("label %d \n",labels[i][j]);
+                _ids.at<float>(i,j)=(float)labels[i][j];
+            }
+        }
+        
+        
+    }
+    void calculateSLICSuperpixelsVLFEAT(Mat mat){
         // The matrix 'mat' will have 3 8 bit channels
         // corresponding to BGR color space.
         
@@ -324,13 +378,13 @@ public:
         int w=0,h=0;
         maxID = 0;
         
-        ifstream file (path);
-        string current_line;        
+        //ifstream file (path);
+        //string current_line;
         
         int i=0;
         int j=0;
         
-        while(getline(file, current_line)){
+       /* while(getline(file, current_line)){
             // Now inside each line we need to seperate the cols
             stringstream temp(current_line);
             string single_value;
@@ -345,24 +399,21 @@ public:
                     j = 0;
                 }
             }
-        }
+        }*/
         
         
         
-       /* try{
-           // f = fopen(path.c_str(),"rb");
+       try{
+            f = fopen(path.c_str(),"rb");
             h=_image.rows; w=_image.cols;
             _ids= Mat::zeros(h,w,CV_32FC1);
             
             for(int i=0;i<h;i++)
                 for (int j=0; j<w; j++)
-                    //if(!feof(f))
+                    if(!feof(f))
                     {
                         int id;
-                       // fread(&id,sizeof(int),1,f);
-                        getline ( file, value, ',' );
-                        printf("%s.",value.c_str());
-                        id = atoi(value.c_str());
+                        fread(&id,sizeof(int),1,f);
                         
                         if (id >= maxID) maxID = id;
                         _ids.at<float>(i,j)=(float)id;
@@ -370,10 +421,10 @@ public:
                         //printf("%d %d %s %d\n",i,j,value.c_str() , atoi(value.c_str()));//(int)_ids.at<float>(i,j));
                     }
             
-           // fclose(f);
+            fclose(f);
             
         }catch(int e){
-            printf("Exception!");}*/
+            printf("Exception!");}
     }
     
     

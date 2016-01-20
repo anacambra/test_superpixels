@@ -299,11 +299,11 @@ class SuperPixel
         for(int b = 0; b < nbins; b++ )
         {
             float binVal = hist.at<float>(b);
-            descriptor.at<float>(0,b)=binVal/(float)_numPixels;
+            descriptor.at<float>(0,b)=(binVal / (float)_numPixels);
             //printf("%d %f\n",b,binVal);
         }
         
-        imshow("GRAY hist",paintHistogram(hist));//waitKey(0);
+       // imshow("GRAY hist",paintHistogram(hist));//waitKey(0);
         return descriptor;
     }//descriptorsPEAKS
     
