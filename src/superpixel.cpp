@@ -307,7 +307,71 @@ class SuperPixel
         return descriptor;
     }//descriptorsPEAKS
     
-    
+    Mat descriptorsLINES(Mat image, int BINS = 8)
+    {
+        Mat descriptor = Mat::zeros(1, BINS, CV_32FC1);
+        
+        Mat img;
+        cvtColor(image, img, CV_BGR2GRAY);
+        
+        Mat src, src_gray;
+        Mat dst, detected_edges;
+        
+        //int edgeThresh = 1;
+        int lowThreshold = 10;
+       // int const max_lowThreshold = 100;
+        int ratio = 3;
+        int kernel_size = 3;
+        /// Reduce noise with a kernel 3x3
+        blur( image, detected_edges, Size(3,3) );
+        
+        Canny( detected_edges, detected_edges, lowThreshold, lowThreshold*ratio, kernel_size );
+        
+        
+        vector<Vec4i> lines;
+        HoughLinesP( detected_edges, lines, 1, CV_PI/180, 80, 30, 10);// , minLineLength=0);
+        cvtColor(detected_edges,detected_edges,CV_GRAY2BGR);
+        for( size_t i = 0; i < lines.size(); i++ )
+        {
+            //filter by size
+            
+            float dis = sqrt(fabs((float)(lines[i][0]-lines[i][2]) * (lines[i][0]-lines[i][2])) +
+                             fabs((float)(lines[i][1]-lines[i][3]) * (lines[i][1]-lines[i][3])));
+            printf("%f\n",dis);
+            
+            if (dis < 35)
+            
+                line( detected_edges, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,0), 3, 8 );
+           
+            //imshow("lines",detected_edges); waitKey(0);
+        }
+        
+        
+        /// Using Canny's output as a mask, we display our result
+
+        return  detected_edges;
+       /*
+        int nbins = BINS; // levels
+        int hsize[] = { nbins }; // just one dimension
+        
+        float range[] = { 0, (const float)(256)};
+        const float *ranges[] = { range };
+        int chnls[] = {0};
+        
+        MatND hist;
+        
+        calcHist(&img, 1, chnls, _mask, hist,1,hsize,ranges);
+        
+        for(int b = 0; b < nbins; b++ )
+        {
+            float binVal = hist.at<float>(b);
+            descriptor.at<float>(0,b)=(binVal / (float)_numPixels);
+            //printf("%d %f\n",b,binVal);
+        }
+        
+        // imshow("GRAY hist",paintHistogram(hist));//waitKey(0);
+        return descriptor;*/
+    }//descriptorsLINES
     
     //VECINOS
     

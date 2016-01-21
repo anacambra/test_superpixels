@@ -158,6 +158,15 @@ public:
         Scalar* color = new cv::Scalar( 0, 0, 255 );
         im.setTo(*color,_arraySP[id].getMask());
         
+        return im;
+    }//paintSuperpixel
+    
+    Mat paintNeighboursSuperpixel(Mat image, int id){
+        
+        Mat im =image.clone();
+        Scalar* color = new cv::Scalar( 0, 0, 255 );
+        im.setTo(*color,_arraySP[id].getMask());
+        
         // its neighbours
         color = new cv::Scalar( 0, 255, 0 );
         set<int> neig = _arraySP[id].getFirstNeighbours();
@@ -177,7 +186,7 @@ public:
         }
         
         return im;
-    }//paintSuperpixel
+    }//paintNeighboursSuperpixel
     
     /*************************************************************************************
      * calculateSLICSuperpixels
