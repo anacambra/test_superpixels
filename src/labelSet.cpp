@@ -88,6 +88,7 @@ public:
                         f=f+1;
                     }
                 }//if (countNonZero(mask) > 0)
+                mask.release();
             }//if (i==0)
         }//for i
         

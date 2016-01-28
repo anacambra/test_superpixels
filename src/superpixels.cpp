@@ -55,7 +55,7 @@ public:
     int maxID;
     
     SuperPixels(){ maxID=0; }
-    ~SuperPixels(){ _image.release(); _ids.release(); _sobel.release(); }
+    ~SuperPixels(){ _image.release(); _ids.release(); _sobel.release(); _labels.release(); _labelsInput.release(); delete[] _arraySP;}
     
     /*************************************************************************************
      * SuperPixels: obtain superpixels of an image (path)
@@ -108,6 +108,8 @@ public:
         
         else
         {
+            fclose(f);
+            
             if (_DEBUG == 1) start = clock();
             
             //To-Do: ./slic_cli  --input test_image/ --contour --superpixels 100 --csv
@@ -245,6 +247,9 @@ public:
             }
         }
         
+        delete(image);
+        delete(segmentation);
+        delete(labels);
         
     }
     void calculateSLICSuperpixelsVLFEAT(Mat mat){
@@ -390,10 +395,10 @@ public:
         //ifstream file (path);
         //string current_line;
         
-        int i=0;
+       /* int i=0;
         int j=0;
         
-       /* while(getline(file, current_line)){
+        while(getline(file, current_line)){
             // Now inside each line we need to seperate the cols
             stringstream temp(current_line);
             string single_value;
@@ -468,6 +473,12 @@ public:
         
         _sobel= (grad != 0);
         
+        grad_x.release();
+        grad_y.release();
+        abs_grad_x.release();
+        abs_grad_y.release();
+        grad.release();
+        
     }//calculateBoundariesSuperpixels
     
     
@@ -487,6 +498,7 @@ public:
                 Mat mask_sp;
                 mask_sp = (_ids == i);
                 _arraySP[i].initialize(i,mask_sp, -1);
+                mask_sp.release();
             }
             
              printf("MAX superpixels %d \n",maxID);
@@ -567,8 +579,9 @@ public:
     
     //////////
     
-    Mat cropSuperpixel(Mat img,int id, float scale = 1)
+    Mat cropSuperpixel(Mat img, int id, float scale = 1)
     {
+        //img is BGR
         Mat nonZeroCoordinates;
         findNonZero( _arraySP[id].getMask(), nonZeroCoordinates);
         
@@ -594,9 +607,13 @@ public:
         
         Mat roi = img(Rect(minX,minY,maxX-minX, maxY-minY)).clone();
         Mat mask =_arraySP[id].getMask();
-        Mat roiMask = mask(Rect(minX,minY,maxX-minX, maxY-minY)).clone();
+        Mat roiMask = mask(Rect(minX,minY,maxX-minX, maxY-minY)).clone(); //0...255
         cvtColor(roiMask,roiMask,CV_GRAY2BGR);
         Size s = roi.size();
+        
+        if (roi.type() != roiMask.type())
+            roi.convertTo(roi, roiMask.type(),255.0,0);
+        
         bitwise_and(roi,roiMask, roi);
         
         resize(roi, roi, Size(s.height*scale,s.height*scale));
@@ -641,128 +658,6 @@ public:
         
         
         return des;
-        
-        
-        /*if (mLAB != 0) && () && ()
-            if (mRGB != 0)
-               hconcat(_arraySP[i].descriptorsLAB(_image,NBINS_L,NBINS_AB), _arraySP[i].descriptorsRGB(_image,NBINS_RGB), des);
-            else if (mPEAKS != 0)
-                hconcat
-                else
-                    /*
-        else
-            //mLAB 0
-            
-        
-        _arraySP[i].descriptorsPEAKS(_image,64);
-        
-        
-        Mat test;
-        // Mat d_lab = _arraySP[2].descriptorsLAB(_image).clone();
-        
-        hconcat(_arraySP[i].descriptorsLAB(_image), _arraySP[i].descriptorsRGB(_image), test);
-        
-        //cout << test.rows << " " << test.cols  << "->" << 101+256+256+256+256+256<< endl;
-        
-        /*for (int i=0; i< test.cols; i++) {
-            printf("%d %f\n",i,test.at<float>(i));
-        }//*/
-        return;
-        
-       // Mat test = Mat::zeros(1,10,CV_32FC1);
-    
-    /*   Mat A = (Mat_<float>(1, 3) << 1, 2, 3);
-        Mat B = (Mat_<float>(1, 3) << 4, 5, 6);
-        Mat C = (Mat_<float>(1, 3) << 7, 8, 9);
-        Mat D = (Mat_<float>(1, 1) << 10);
-       
-        hconcat(A, B, test);
-        hconcat(test, C, test);
-        hconcat(test, D, test);
-        
-        cout << "M = "<< test << "->" << 101+256+256+256+256+256<< endl;*/
-        
-        // LAB
-        Mat ld_lab = Mat::zeros(1,100+255+255,CV_32FC1);
-        
-        
-        int nSAMPLES = 4;
-        //int numDesc = 100 + 255 + 255;
-        Mat trainingData = Mat::zeros(nSAMPLES,100,CV_32FC1);
-        
-        Mat l0 = Mat::zeros(1,100,CV_32FC1);
-       // _arraySP[2].descriptors(_image,&l0);
-        
-        //l0.row(0).copyTo(trainingData.row(0));
-        l0.row(0).copyTo(trainingData.row(0));
-        
-      //  for( int h = 0; h < 100; h++ )
-            // printf("%d ", trainingData.at<uchar>(0,h));
-        
-        
-       // Mat l1 = Mat::zeros(1,100,CV_8UC1);
-      //  _arraySP[1].descriptors(_image,&l0);
-        
-        //l0.row(0).copyTo(trainingData.row(0));
-        l0.row(0).copyTo(trainingData.row(1));
-        
-        //for( int h = 0; h < 100; h++ )
-          //  printf("%d ", trainingData.at<uchar>(1,h));
-        
-      //  _arraySP[0].descriptors(_image,&l0);
-        
-        //l0.row(0).copyTo(trainingData.row(0));
-        l0.row(0).copyTo(trainingData.row(2));
-        
-     //   _arraySP[8].descriptors(_image,&l0);
-        //l0.row(0).copyTo(trainingData.row(0));
-        l0.row(0).copyTo(trainingData.row(3));
-        //for( int h = 0; h < 100; h++ )
-        //printf("%d ", trainingData.at<uchar>(2,h));
-        
-       
- 
-        // Set up training data
-        float labels[4] = {0.0, 0.0, 1.0, 1.0};
-        Mat labelsMat(nSAMPLES, 1, CV_32FC1, labels);
-        
-       // float trainingData[4][2] = { {501, 10}, {255, 10}, {501, 255}, {10, 501} };
-        Mat trainingDataMat(nSAMPLES, 100, CV_32FC1, &trainingData);
-        
-        // Set up SVM's parameters
-        CvSVMParams params;
-        params.svm_type    = CvSVM::C_SVC;
-        params.kernel_type = CvSVM::LINEAR;
-        params.term_crit   = cvTermCriteria(CV_TERMCRIT_ITER, 100, 1e-6);
-        
-        // Train the SVM
-        CvSVM SVM;
-        SVM.train(trainingDataMat, labelsMat, Mat(), Mat(), params);
-        
-        //SVM.save("svmTEXT.xml");
-       // SVM.load("svmTEXT.xml");
-        //test
-        
-        Mat l1 = Mat::zeros(1,100,CV_32FC1);
-       // _arraySP[2].descriptors(_image,&l1);
-        
-        float response = SVM.predict(l1);
-        printf("RESPONSE 2  %f\n",response);waitKey(0);
-        
-      //  _arraySP[1].descriptors(_image,&l1);
-        response = SVM.predict(l1);
-        printf("RESPONSE 1  %f\n",response);waitKey(0);
-        
-     //   _arraySP[8].descriptors(_image,&l1);
-        response = SVM.predict(l1);
-        printf("RESPONSE 8  %f\n",response);waitKey(0);
-        
-     //   _arraySP[0].descriptors(_image,&l1);
-        response = SVM.predict(l1);
-        printf("RESPONSE 0  %f\n",response);waitKey(0);
-        
-        waitKey(0);
-        
     }
     
     /*************************************************************************************
@@ -803,9 +698,11 @@ public:
         //paint
         labelSet val(NUMLABELS);
         Mat leyend= Mat::ones(_image.rows,_image.cols, CV_8UC3);
-        Mat out = val.paintLabelRandom(_labels,NUMLABELS,&leyend);
+        //Mat out = val.paintLabelRandom(_labels,NUMLABELS,&leyend);
         
-        return out;
+        leyend.release();
+        
+        return val.paintLabelRandom(_labels,NUMLABELS,&leyend);//out;
 
     }//initializLabeling
     

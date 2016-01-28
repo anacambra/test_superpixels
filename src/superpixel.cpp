@@ -64,7 +64,7 @@ class SuperPixel
     public:
     
     SuperPixel(){ _id = -1; _numPixels = 0; _mask = Mat::zeros(0, 0, 0);  _label = -1; }
-    ~SuperPixel(){} ;
+    ~SuperPixel(){ _mask.release();} ;
     
     void initialize(int id,Mat mask, int label)
     {
@@ -226,6 +226,11 @@ class SuperPixel
             //printf("%d %f\n",b,binVal);
         }
         
+        spl[0].release();
+        spl[1].release();
+        spl[2].release();
+        image_out.release();
+        
         return descriptor;
     }//descriptorsLAB
     
@@ -275,6 +280,10 @@ class SuperPixel
             //printf("%d %f\n",b,binVal);
         }
         
+        spl[0].release();
+        spl[1].release();
+        spl[2].release();
+        
         return descriptor;
     }//descriptorsRGB
     
@@ -303,9 +312,24 @@ class SuperPixel
             //printf("%d %f\n",b,binVal);
         }
         
-       // imshow("GRAY hist",paintHistogram(hist));//waitKey(0);
+        img.release();
         return descriptor;
     }//descriptorsPEAKS
+    
+    Mat descriptorsEDGES(Mat image, int BINS = 8)
+    {
+       //image is BGR float
+        Mat out;
+        
+        cvtColor(image, out, CV_BGR2GRAY);
+        out.convertTo(out, CV_32FC1,1/255.0,0);
+
+
+        
+       // printf("OUT type %d channeld %d", out.type(),out.channels());
+        return  out;
+        
+    }//descriptorsEDGES
     
     Mat descriptorsLINES(Mat image, int BINS = 8)
     {
@@ -350,27 +374,7 @@ class SuperPixel
         /// Using Canny's output as a mask, we display our result
 
         return  detected_edges;
-       /*
-        int nbins = BINS; // levels
-        int hsize[] = { nbins }; // just one dimension
-        
-        float range[] = { 0, (const float)(256)};
-        const float *ranges[] = { range };
-        int chnls[] = {0};
-        
-        MatND hist;
-        
-        calcHist(&img, 1, chnls, _mask, hist,1,hsize,ranges);
-        
-        for(int b = 0; b < nbins; b++ )
-        {
-            float binVal = hist.at<float>(b);
-            descriptor.at<float>(0,b)=(binVal / (float)_numPixels);
-            //printf("%d %f\n",b,binVal);
-        }
-        
-        // imshow("GRAY hist",paintHistogram(hist));//waitKey(0);
-        return descriptor;*/
+
     }//descriptorsLINES
     
     //VECINOS
