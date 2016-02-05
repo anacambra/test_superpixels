@@ -19,29 +19,47 @@ using namespace cv;
 
 using namespace boost::filesystem;
 
+//#include "utilsCaffe.cpp"
+#include <caffe/caffe.hpp>
+using namespace caffe;
+
+
 #define LABEL_TEXT 1
 #define LABEL_NOTEXT -1
 
 //#define DEBUG_SP 1
 
-int mLAB   = 1; int NBINS_L = 50; int NBINS_AB=128;
+int mLAB   = 0; int NBINS_L = 50; int NBINS_AB=128;
 int mRGB   = 0; int NBINS_RGB   = 256;
-int mPEAKS = 1; int NBINS_PEAKS = 128;
+int mPEAKS = 0; int NBINS_PEAKS = 128;
 
-int mLINES = 1; int NBINS_LINES = 128;
+int mLINES = 0; int NBINS_LINES = 128;
+
+int mEDGES = 0; int NBINS_EDGES = 100;
 
 /*int nSAMPLES = 50;
 string nameSVM = "svm_LAB_PEAKS_" + to_string(nSAMPLES) + "_NOTZERO.xml";*/
 
 //train SVM
-void descriptorSVMText(string dir_path,string dir_pathGT, int nSAMPLES, string nameSVM, string out);
+void descriptorSVMText(string dir_path,string dir_pathGT, string dir_edges, int nSAMPLES, string nameSVM, string out);
 
 //HOG
 Mat get_hogdescriptor_visu(const Mat& color_origImg, vector<float>& descriptorValues, const Size & size );
 void compute_hog( Mat  img_lst, vector< Mat > & gradient_lst, const Size & size );
 
 
+//using caffe::MemoryDataLayer;
+
+//namespace db = caffe::db;
+
+
+
+
 int main(int argc, const char * argv[]) {
+    
+    //Net<float> *caffe_net;
+    Caffe::set_mode(Caffe::CPU);
+    //testcaffe();
     
     //parse argv
     
@@ -49,17 +67,18 @@ int main(int argc, const char * argv[]) {
     desc.add_options()
     ("help", "produce help message")
     ("v", "debug mode ON")
-    ("image", boost::program_options::value<std::string>()->required(), "image")
-    ("labeled", boost::program_options::value<std::string>()->required(), "image GT labeled")
-    ("edges", boost::program_options::value<std::string>()->required(), "path image edges")
+    ("svmOptions", boost::program_options::value<std::string>()->required(), "descriptors train")
+    ("svmTest", "test svm")
+    ("image", boost::program_options::value<std::string>(), "image")
+    ("labeled", boost::program_options::value<std::string>(), "image GT labeled")
+    ("edges", boost::program_options::value<std::string>(), "path image edges")
     ("numLabels", boost::program_options::value<int>()->default_value(2), "num labels")
-    ("svm", "test svm")
-    ("nSamples", boost::program_options::value<int>()->default_value(50), "test svm");
+    ("svmTrain", "train svm")
+    ("nSamples", boost::program_options::value<int>()->required(), "test svm");
+    
     
     boost::program_options::variables_map parameters;
     boost::program_options::store(boost::program_options::parse_command_line(argc, argv,desc),parameters);
-    boost::program_options::notify(parameters);
-    
     boost::program_options::notify(parameters);
     
     
@@ -68,139 +87,187 @@ int main(int argc, const char * argv[]) {
         return 1;
     }
     
-    boost::filesystem::path inputImage(parameters["image"].as<std::string>());
     
     bool DEBUG = false;
     if (parameters.find("v") != parameters.end()) {
         DEBUG = true;
     }
     
+    //SVM
     int nSAMPLES = parameters["nSamples"].as<int>();
-    string nameSVM = "svm_LAB_PEAKS_" + to_string(nSAMPLES) + "_NOTZERO.xml";
+    string nameSVM = "svm_" + parameters["svmOptions"].as<std::string>() + "_" + to_string(nSAMPLES) + "_NOTZERO.xml";
     
+    if (parameters["svmOptions"].as<std::string>().find("LAB") != std::string::npos)
+        mLAB = 1;
     
-    ////////////////////////
-    //SVM train or load
+    if (parameters["svmOptions"].as<std::string>().find("RGB") != std::string::npos)
+        mRGB = 1;
     
-    ifstream infile(nameSVM);
-    if (! infile.good()) {
-        descriptorSVMText("/Users/acambra/Dropbox/dataset/ICDAR/ch4_training_images",
-                          "/Users/acambra/Dropbox/dataset/ICDAR/masks",
-                          nSAMPLES,
-                          nameSVM,
-                          "/Users/acambra/TESIS/CODE/GibHub_test_superpixels/build/Debug/des_"+nameSVM+".yaml");
-    }
+    if (parameters["svmOptions"].as<std::string>().find("PEAKS") != std::string::npos)
+        mPEAKS = 1;
     
-    //evaluate/test SVM
-    CvSVM SVM;
-    SVM.load(nameSVM.c_str());
+    if (parameters["svmOptions"].as<std::string>().find("EDGES") != std::string::npos)
+        mEDGES = 1;
     
-    ////////////////////////
-    //SUPERPIXELS
-    
-    SuperPixels *SPCTE;
-    
-    string nameImage = inputImage.string();//argv[1];
-    
-    SPCTE = new SuperPixels(nameImage);
-   
-    //boundaries between SP
-    SPCTE->calculateBoundariesSuperpixels();
-    
-    //init superpixels
-    SPCTE->initializeSuperpixels();
-    Mat imgSP = SPCTE->getImageSuperpixels().clone();
-    //imshow("superpixels",SPCTE->getImageSuperpixels());
-   // waitKey(0);//*/
-    
-   
-    //check neigbour
-    // Mat image
-    /*for (int id=0; id < SPCTE->maxID+1; id++)
-     {
-     imshow("superpixels",SPCTE->paintSuperpixel(SPCTE->getImageSuperpixels(),id));
-     waitKey(25);
-     }*/
-    
-    //TEXT LABELS
-    SPCTE->setNUMLABELS(parameters["numLabels"].as<int>());//atoi(argv[3]));
-    //init labeling
+    string nameSVM2 = "train/" + nameSVM;
 
-    Mat gt = SPCTE->initializeLabeling(parameters["labeled"].as<std::string>(), MODE_LABEL_NOTZERO).clone();
-    imshow("GT", gt);
-    char k=-1;
     
-    string nameWindow = "Superpixel ";
-    
-    //test
-    for (int id=0; id < SPCTE->maxID+1; id++)
-    {
-        if (DEBUG == 1) {
-            //KEYBOARD
-            if (k == 2){//<-
-                if (id >= 2) id = id - 2;
-                if (id == 1) id = 0;
-            }
-            if (k == 27){//ESC
-                break;
-            }
+    ////////////////////////
+    //SVM train o load
+   
+    if (parameters.find("svmTrain") != parameters.end()) {
+        
+        printf("==================================================\n");
+        printf("**** \tTRAIN SVM_%s numSamples %d\n",parameters["svmOptions"].as<std::string>().c_str(),nSAMPLES);
+        printf("==================================================\n");
+        
+        ifstream infile(nameSVM2);
+        if (! infile.good()) {
+            
+            descriptorSVMText("/Users/acambra/Dropbox/dataset/ICDAR/ch4_training_images",
+                              "/Users/acambra/Dropbox/dataset/ICDAR/masks",
+                              "/Users/acambra/Dropbox/dataset/ICDAR/ch4_training_images/edges",
+                              nSAMPLES,
+                              nameSVM2,
+                              "/Users/acambra/TESIS/CODE/GibHub_test_superpixels/build/Debug/train/des_"+nameSVM+".yaml");
+        }
+        else{
+            printf("\t* SVM Load: %s\n", nameSVM2.c_str());
         }
         
-        destroyWindow(nameWindow.c_str());
-        nameWindow = "Superpixel " + to_string(id);
+    }//parameters.find("svmTrain")
+    
+    ////////////////////////
+    //evaluate test SVM
+    
+    if (parameters.find("svmTest") != parameters.end()) {
         
-        Mat desID = SPCTE->calculateDescriptors(id,SPCTE->getImage(),mLAB,NBINS_L,NBINS_AB,mRGB,NBINS_RGB,mPEAKS,NBINS_PEAKS).clone();
+        CvSVM SVM;
+        SVM.load(nameSVM2.c_str());
         
-        //evaluate
-        float response = SVM.predict(desID);//,true);
-        printf("RESPONSE SVM  %f\n",response);
+        boost::filesystem::path inputImage(parameters["image"].as<std::string>());
         
-        if (DEBUG == 1) {
+        ////////////////////////
+        //SUPERPIXELS
+        
+        SuperPixels *SPCTE;
+        string nameImage = inputImage.string();//argv[1];
+        SPCTE = new SuperPixels(nameImage);
+        
+        //boundaries between SP
+        SPCTE->calculateBoundariesSuperpixels();
+        
+        //init superpixels
+        SPCTE->initializeSuperpixels();
+        Mat imgSP = SPCTE->getImageSuperpixels().clone();
+        //imshow("superpixels",SPCTE->getImageSuperpixels());
+        // waitKey(0);//*/
+        
+        
+        //check neigbour
+        // Mat image
+        /*for (int id=0; id < SPCTE->maxID+1; id++)
+         {
+         imshow("superpixels",SPCTE->paintSuperpixel(SPCTE->getImageSuperpixels(),id));
+         waitKey(25);
+         }*/
+        
+        //TEXT LABELS
+        SPCTE->setNUMLABELS(parameters["numLabels"].as<int>());//atoi(argv[3]));
+        //init labeling
+        Mat gt = SPCTE->initializeLabeling(parameters["labeled"].as<std::string>(), MODE_LABEL_NOTZERO).clone();
+        imshow("GT", gt);
+        char k=-1;
+        
+        string nameWindow = "Superpixel ";
+        
+        //test
+        for (int id=0; id < SPCTE->maxID+1; id++)
+        {
+            if (DEBUG == 1) {
+                //KEYBOARD
+                if (k == 2){//<-
+                    if (id >= 2) id = id - 2;
+                    if (id == 1) id = 0;
+                }
+                if (k == 27){//ESC
+                    break;
+                }
+            }
             
-            imshow(nameWindow.c_str(),SPCTE->cropSuperpixel(SPCTE->getImageSuperpixels().clone(),id,3));
-            Mat img_sp;
+            destroyWindow(nameWindow.c_str());
+            nameWindow = "Superpixel " + to_string(id);
             
-            //TEST HOG
-            //TO-DO: check image is divisible by 8,8
-            /*if ( ((SPCTE->getImage().rows / 8 )== 0) && ((SPCTE->getImage().cols / 8 )== 0) )
-                 img_sp = SPCTE->getImage().clone();//SPCTE->cropSuperpixel(SPCTE->getImage(),id,8).clone(); //
-            else
-                 img_sp = SPCTE->cropSuperpixel(SPCTE->getImage(),id,8).clone(); 
-             vector< Mat >  gradient_lst;
-             compute_hog(img_sp,gradient_lst,Size( img_sp.size() ));//*/
-           //imshow("GT label",SPCTE->cropSuperpixel(gt,id,1));
-            
-           
+            //EDGES
             Mat imgEdges = imread(parameters["edges"].as<std::string>(),CV_LOAD_IMAGE_COLOR);
+                        
+            Mat desID = SPCTE->calculateDescriptors(id,SPCTE->getImage(),mLAB,NBINS_L,NBINS_AB,mRGB,NBINS_RGB,mPEAKS,NBINS_PEAKS,mEDGES,NBINS_EDGES,imgEdges).clone();
             
-            Mat edges = SPCTE->_arraySP[id].descriptorsEDGES(imgEdges,100).clone();
-            //imshow("GT ",edges);
+            //evaluate
+            float response = SVM.predict(desID);//,true);
+            printf("RESPONSE SVM  %f\n",response);
             
-            cvtColor(edges,edges,CV_GRAY2BGR);
-            imshow("edges i",SPCTE->cropSuperpixel(edges,id,3));//*/
+            if (DEBUG == 1) {
+                
+                imshow(nameWindow.c_str(),SPCTE->cropSuperpixel(SPCTE->getImageSuperpixels().clone(),id,3));
+                Mat img_sp;
+                Mat imgEdges = imread(parameters["edges"].as<std::string>(),CV_LOAD_IMAGE_COLOR);
+                //imshow("img EDGES ",imgEdges);
+                
+                Mat destest = SPCTE->calculateDescriptors(id,SPCTE->getImage(),mLAB,NBINS_L,NBINS_AB,mRGB,NBINS_RGB,mPEAKS,NBINS_PEAKS,mEDGES,NBINS_EDGES,imgEdges).clone();
+                
+                //TEST HOG
+                
+                //TO-DO: check image is divisible by 8,8
+                /*if ( ((SPCTE->getImage().rows / 8 )== 0) && ((SPCTE->getImage().cols / 8 )== 0) )
+                 img_sp = SPCTE->getImage().clone();//SPCTE->cropSuperpixel(SPCTE->getImage(),id,8).clone(); //
+                 else
+                 img_sp = SPCTE->cropSuperpixel(SPCTE->getImage(),id,8).clone();
+                 vector< Mat >  gradient_lst;
+                 compute_hog(img_sp,gradient_lst,Size( img_sp.size() ));//*/
+                //imshow("GT label",SPCTE->cropSuperpixel(gt,id,1));
+                
+                
+                /* Mat imgEdges = imread(parameters["edges"].as<std::string>(),CV_LOAD_IMAGE_COLOR);
+                 imshow("img EDGES ",imgEdges);
+                 //  Mat edges = SPCTE->_arraySP[id].descriptorsEDGES(imgEdges,100).clone();//*/
+                
+                
+                //imshow("GT ",edges);
+                
+                // cvtColor(edges,edges,CV_GRAY2BGR);
+                // imshow("edges i",SPCTE->cropSuperpixel(edges,id,3));//*/
+                
+                // cout << edges;
+                //HOG
+                //crop image superpixel
+                
+                
+                // for (int i =0; i< gradient_lst.size(); i++)
+                //   cout <<  "Size: " << gradient_lst.size() << " Mat size: "<<  gradient_lst[i].size();
+                
+                
+                if ((char)k != 'c')
+                    k = waitKey(0);
+            }
             
-           // cout << edges;
-            //HOG
-            //crop image superpixel
+            //paint image with SVM response
+            if (response >= LABEL_TEXT)
+                imgSP = SPCTE->paintSuperpixel(imgSP, id).clone();
             
+        }//*/
+        
+        if (DEBUG == 1){
+            imshow(nameSVM,imgSP);waitKey(0);}
+        else{
             
-           // for (int i =0; i< gradient_lst.size(); i++)
-             //   cout <<  "Size: " << gradient_lst.size() << " Mat size: "<<  gradient_lst[i].size();
-            
-           
-            if ((char)k != 'c')
-                k = waitKey(0);
+            size_t found1 = nameImage.find_last_of("/");
+            string name = "train/test/"+ nameImage.substr(found1+1) + "_" +parameters["svmOptions"].as<std::string>()+ "_" + to_string(nSAMPLES)+ ".png";
+            imwrite(name,imgSP);
         }
-        
-        //paint image with SVM response
-        if (response >= LABEL_TEXT)
-            imgSP = SPCTE->paintSuperpixel(imgSP, id).clone();
-        
-    }//*/
+    }//svmTest
     
-    //if (DEBUG == 1){
-        imshow(nameSVM,imgSP);waitKey(0);//}
-   // else imwrite(nameSVM + ".png",imgSP);
+    
     
     //check neigbour
    // Mat image
@@ -210,15 +277,9 @@ int main(int argc, const char * argv[]) {
         waitKey(25);
     }*/
     
-    
     //init labeling
     //Mat out = SPCTE->initializeMeanLabeling(argv[2]).clone();
-    
     //imshow("labels", out);
-    
-    
-    
-    
     
     return 0;
     
@@ -228,7 +289,7 @@ int main(int argc, const char * argv[]) {
 
 //TRAIN SVM
 
-void descriptorSVMText(string dir_path,string dir_pathGT, int nSAMPLES, string nameSVM, string out)
+void descriptorSVMText(string dir_path,string dir_pathGT, string dir_edges, int nSAMPLES, string nameSVM, string out)
 {
     
     //SVM
@@ -236,6 +297,7 @@ void descriptorSVMText(string dir_path,string dir_pathGT, int nSAMPLES, string n
     if (mLAB == 1)      numDES += NBINS_L + (2*NBINS_AB);
     if (mRGB == 1)      numDES += (3*NBINS_RGB);
     if (mPEAKS == 1)    numDES += NBINS_PEAKS;
+    if (mEDGES == 1)    numDES += NBINS_EDGES;
     
     
     Mat trainingData = Mat::zeros(nSAMPLES*2,numDES,CV_32FC1);
@@ -273,9 +335,14 @@ void descriptorSVMText(string dir_path,string dir_pathGT, int nSAMPLES, string n
                 
                 SPCTE->initializeLabeling(imageGT, MODE_LABEL_NOTZERO);//MODE_LABEL_MEDIAN);//
                 
+                string nameEdges = dir_edges + "/" + i->path().filename().string();
+                nameEdges = nameEdges.substr(0, nameEdges.find_last_of(".")) + ".png";
+                Mat edges = imread(nameEdges,CV_LOAD_IMAGE_COLOR);
+                
                 for (int id=0; (id < SPCTE->maxID+1 && (neg+pos) < (nSAMPLES*2)) ; id++)
                 {
-                    Mat des = SPCTE->calculateDescriptors(id, SPCTE->getImage(), mLAB,NBINS_L,NBINS_AB,mRGB,NBINS_RGB,mPEAKS,NBINS_PEAKS).clone();
+                    
+                    Mat des = SPCTE->calculateDescriptors(id,SPCTE->getImage(),mLAB,NBINS_L,NBINS_AB,mRGB,NBINS_RGB,mPEAKS,NBINS_PEAKS,mEDGES,NBINS_EDGES,edges).clone();
                     //add des in trainingData
                     //des.row(0).copyTo(trainingData.row(id));
                     int n = neg + pos;
@@ -309,7 +376,7 @@ void descriptorSVMText(string dir_path,string dir_pathGT, int nSAMPLES, string n
     fs << "trainingData" << trainingData;
     fs << "labels" << labels;
     fs.release();
-    cout << trainingData << endl;
+    //cout << trainingData << endl;
     
     //TRAIN
     

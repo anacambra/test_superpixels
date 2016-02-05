@@ -311,25 +311,50 @@ class SuperPixel
             descriptor.at<float>(0,b)=(binVal / (float)_numPixels);
             //printf("%d %f\n",b,binVal);
         }
-        
+         imshow("Hist GRAY",paintHistogram(hist));
+        hist.release();
         img.release();
         return descriptor;
     }//descriptorsPEAKS
     
-    Mat descriptorsEDGES(Mat image, int BINS = 8)
+    Mat descriptorsEDGES(Mat image, int BINS = 100)
     {
        //image is BGR float
         Mat out;
+        Mat descriptor = Mat::zeros(1, BINS, CV_32FC1);
         
         cvtColor(image, out, CV_BGR2GRAY);
         out.convertTo(out, CV_32FC1,1/255.0,0);
-
-
+       /* double min, max;
+        cv::minMaxLoc(image, &min, &max);
+        printf("IMAGe min %f max %f \n",min,max);
+        cv::minMaxLoc(out, &min, &max);
+        printf("OOT min %f max %f \n",min,max);*/
         
-       // printf("OUT type %d channeld %d", out.type(),out.channels());
-        return  out;
+        int nbins = BINS; // levels
+        int hsize[] = { nbins }; // just one dimension
+        
+        float range[] = { 0, (const float)(1.0)};
+        const float *ranges[] = { range };
+        int chnls[] = {0};
+        
+        MatND hist;
+        
+        calcHist(&out, 1, chnls, _mask, hist,1,hsize,ranges);
+        
+        for(int b = 0; b < nbins; b++ )
+        {
+            float binVal = hist.at<float>(b);
+            descriptor.at<float>(0,b)=(binVal / (float)_numPixels);
+           // printf("%d \t %f\n",b,binVal);
+        }
+        imshow("Hist EDGES",paintHistogram(hist));
+        hist.release();
+        out.release();
+        return  descriptor;
         
     }//descriptorsEDGES
+    
     
     Mat descriptorsLINES(Mat image, int BINS = 8)
     {

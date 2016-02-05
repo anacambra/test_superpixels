@@ -501,7 +501,7 @@ public:
                 mask_sp.release();
             }
             
-             printf("MAX superpixels %d \n",maxID);
+             printf("MAX superpixels %d\n",maxID);
         }
         else{
             printf("_ids superpixels NULL \n");
@@ -627,7 +627,8 @@ public:
     Mat calculateDescriptors(int i, Mat image,
                               int mLAB   = 0, int NBINS_L     = 50, int NBINS_AB=128,
                               int mRGB   = 0, int NBINS_RGB   = 256,
-                              int mPEAKS = 1, int NBINS_PEAKS = 64)
+                              int mPEAKS = 1, int NBINS_PEAKS = 64,
+                              int mEDGES = 0, int NBINS_EDGES = 100, Mat edges = Mat::zeros(1,1,CV_32FC3))
     {
         Mat des;
         
@@ -650,6 +651,14 @@ public:
                 hconcat(_arraySP[i].descriptorsPEAKS(image,NBINS_PEAKS), des,des);
             else
                 des=_arraySP[i].descriptorsPEAKS(image,NBINS_PEAKS).clone();
+        }
+        
+        if (mEDGES != 0)
+        {
+            if (des.rows != 0)
+                hconcat(_arraySP[i].descriptorsEDGES(edges,NBINS_EDGES), des,des);
+            else
+                des=_arraySP[i].descriptorsEDGES(edges,NBINS_EDGES).clone();
         }
         
         /*for (int i=0; i< des.cols; i++) {
