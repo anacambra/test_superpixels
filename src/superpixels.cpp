@@ -54,8 +54,20 @@ public:
     SuperPixel *_arraySP;
     int maxID;
     
-    SuperPixels(){ maxID=0; }
-    ~SuperPixels(){ _image.release(); _ids.release(); _sobel.release(); _labels.release(); _labelsInput.release(); delete[] _arraySP;}
+    utilsCaffe *_caffe;
+    
+    SuperPixels()
+    {   maxID=0;
+    }
+    ~SuperPixels(){ _image.release(); _ids.release(); _sobel.release(); _labels.release(); _labelsInput.release(); delete[] _arraySP; /*if (_caffe != NULL) delete _caffe;*/}
+    
+    void initCaffe()
+    {
+         _caffe = new utilsCaffe("/Users/acambra/Dropbox/test_caffe/bvlc_reference_caffenet.caffemodel","/Users/acambra/Dropbox/test_caffe/deploy.prototxt");
+    }
+    
+    void activeDEBUG(){ _DEBUG = 1;}
+    void desactiveDEBUG(){ _DEBUG = 0;}
     
     /*************************************************************************************
      * SuperPixels: obtain superpixels of an image (path)
@@ -123,7 +135,6 @@ public:
         }
 
         _arraySP = new SuperPixel[maxID+1];
-        
         return;
     }//SuperPixels
 
@@ -627,8 +638,10 @@ public:
     Mat calculateDescriptors(int i, Mat image,
                               int mLAB   = 0, int NBINS_L     = 50, int NBINS_AB=128,
                               int mRGB   = 0, int NBINS_RGB   = 256,
-                              int mPEAKS = 1, int NBINS_PEAKS = 64,
-                              int mEDGES = 0, int NBINS_EDGES = 100, Mat edges = Mat::zeros(1,1,CV_32FC3))
+                              int mPEAKS = 0, int NBINS_PEAKS = 64,
+                              int mEDGES = 0, int NBINS_EDGES = 100, int modeEDGES = 2, Mat edges = Mat::zeros(1,1,CV_32FC3),
+                              int mCAFFE = 0, string CAFFE_LAYER = "fc7", int NUMCAFFE = 4096,
+                              int mSEMANTIC = 0, int SEMANTIC_LABELS = 60)
     {
         Mat des;
         
@@ -656,16 +669,48 @@ public:
         if (mEDGES != 0)
         {
             if (des.rows != 0)
-                hconcat(_arraySP[i].descriptorsEDGES(edges,NBINS_EDGES), des,des);
+                hconcat(_arraySP[i].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES), des,des);
             else
-                des=_arraySP[i].descriptorsEDGES(edges,NBINS_EDGES).clone();
+                des=_arraySP[i].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES).clone();
         }
         
+        if (mCAFFE != 0)
+        {
+            Mat imageSP = cropSuperpixel(image,i,1).clone();
+            
+            Mat desCaf= _caffe->features(imageSP, "fc7").clone();
+            normalize(desCaf, desCaf);
+            
+           /* double min, max;
+            minMaxLoc(desCaf, &min, &max);
+            Scalar     mean, stddev;
+            meanStdDev ( desCaf, mean, stddev );
+            
+            printf("Caffe des %d values[%f,%f] mean %f stdDev %f \n",i, min, max,mean.val[0],stddev.val[0]);*/
+            
+            if (des.rows != 0)
+                hconcat(desCaf,des,des);//_arraySP[i].descriptorsCAFFE(imageSP,CAFFE_LAYER,NUMCAFFE), des,des);
+            else
+                des=desCaf.clone();//_arraySP[i].descriptorsCAFFE(imageSP,CAFFE_LAYER,NUMCAFFE).clone();
+            
+            printf("Descriptors Caffe %d\n",i);
+            
+            imageSP.release();
+            desCaf.release();
+            
+        }
+        
+        if (mSEMANTIC != 0)
+        {
+            if (des.rows != 0)
+                hconcat(_arraySP[i].descriptorsSEMANTIC(SEMANTIC_LABELS),des,des);
+            else
+                des=_arraySP[i].descriptorsSEMANTIC(SEMANTIC_LABELS).clone();
+        }
         /*for (int i=0; i< des.cols; i++) {
          printf("%d %f\n",i,des.at<float>(i));
          }//*/
-        
-        
+
         return des;
     }
     
@@ -714,6 +759,74 @@ public:
         return val.paintLabelRandom(_labels,NUMLABELS,&leyend);//out;
 
     }//initializLabeling
+    
+    Mat initializeSegmentation(string path, int numLabels, int mode = MODE_LABEL_MEDIAN)
+    {
+        //read image
+        Mat seg;
+        try{
+            seg =  imread(path,CV_LOAD_IMAGE_GRAYSCALE);
+            seg = (seg * (numLabels - 1)/ 255) ;
+            
+            if ( seg.rows != _image.rows && seg.cols != _image.cols)
+            {
+                resize(seg, seg, Size(_image.cols,_image.rows));
+            }
+            
+            /*double min, max;
+             cv::minMaxLoc(_labelsInput, &min, &max);
+             printf("%f %f ",min,max);//*/
+            
+            if(seg.data == NULL)
+            {
+                printf("Image Segmentation %s not found\n",path.c_str());
+                return Mat::zeros(100, 100, CV_8UC1);
+            }
+            else
+                printf("Mat segmentation CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
+        }
+        catch(int e)
+        {
+            printf("Image Segmentation %s not found\n",path.c_str());
+            return Mat::zeros(100, 100, CV_8UC1);
+        }
+        Mat im;
+        labelSet val(numLabels);
+        
+        for (int id=0; id < maxID+1; id++)
+        {
+            //int l =
+            _arraySP[id].create_labelSegmentation(seg,numLabels,mode);
+            //_labels.setTo(l,_arraySP[id].getMask());
+           // printf("LABEL: %d %s \n",l,val.getLabel(l).c_str());getchar();
+        }
+        
+        //
+        calculateLabelingNeighbours();
+        
+        //paint
+        Mat leyend= Mat::ones(_image.rows,_image.cols, CV_8UC3);
+       
+        //leyend.release();
+        
+        return val.paintLabelRandom(seg,numLabels,&leyend);
+    }
+    
+    void calculateLabelingNeighbours()
+    {
+        for (int id1=0; id1 < maxID+1; id1++)
+        {
+            //get neighbour
+            set<int> neig = _arraySP[id1].getFirstNeighbours();
+            
+            
+            std::set<int>::iterator it;
+            for (it=neig.begin(); it!=neig.end(); ++it)
+            {
+                _arraySP[id1].addHistogramLabelSegmentation(_arraySP[*it].getLabelSegmentation());
+            }
+        }
+    }//calculateLabelingNeighbour*/
     
 
 };

@@ -51,7 +51,9 @@ public:
             copy(text, text+2,_labels);
     };
     
-    ~labelSet(){};
+    ~labelSet(){ delete[] _labels;};
+    
+    string getLabel(int i){return _labels[i];}
     
     //paint random labels (0..numLabels)
     Mat paintLabelRandom(Mat label, int numLabels,Mat *leyend)

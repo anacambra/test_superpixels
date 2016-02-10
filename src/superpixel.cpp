@@ -8,6 +8,8 @@
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/highgui/highgui.hpp"
 
+#include "utilsCaffe.cpp"
+
 using namespace cv;
 using namespace std;
 
@@ -16,9 +18,8 @@ using namespace std;
 
 class SuperPixel
 {
-
     int _id;
-    //mascara de la imagen original
+    //mask original image
     Mat _mask;
     int _numPixels;
     int _label;
@@ -28,43 +29,22 @@ class SuperPixel
     set<int> _secondNeighbours;
     
     MatND _labelHist;
+    MatND _labelSegmentation;
     
     MatND hist_l;
     MatND hist_a;
     MatND hist_b;
     
-/*    float l_median;
-    float l_mean;
-    float l_std;
     
-    MatND hist_a;
-    float a_median;
-    float a_mean;
-    float a_std;
+    unsigned char _DEBUG = 0;
     
-    MatND hist_b;
-    float b_median;
-    float b_mean;
-    float b_std;*/
-    
-    
-    
-   /* MatND hist_depth;
-    //mediana sin ceros
-    float d_median;
-    //media
-    float d_mean;
-    //varianza
-    float d_var;
-    //precision
-    float d_acc;
-    float depth;*/
-    
-    
-    public:
+public:
     
     SuperPixel(){ _id = -1; _numPixels = 0; _mask = Mat::zeros(0, 0, 0);  _label = -1; }
     ~SuperPixel(){ _mask.release();} ;
+    
+    void activeDEBUG(){ _DEBUG = 1;}
+    void desactiveDEBUG(){ _DEBUG = 0;}
     
     void initialize(int id,Mat mask, int label)
     {
@@ -72,12 +52,53 @@ class SuperPixel
         _mask = mask.clone();
         _numPixels = countNonZero(_mask);
         _label = label;
-    
+        
     }
     int getId(){ return _id;}
     int getNumPixels(){ return _numPixels;}
     int getLabel(){ return _label;}
     Mat getMask(){ return _mask;}
+    
+    MatND getLabelSegmentation(){ return _labelSegmentation;}
+    
+    void addHistogramLabelSegmentation(MatND hist)
+    {
+       /* printf("NEW HIST");
+        for( int h = 0; h < 60; h++ )
+        {
+            float binVal = hist.at<float>(h);
+            if (binVal != 0)printf("%d %f\n",h,binVal);
+        }
+        printf("-----\n");//*/
+        
+
+        if (_labelSegmentation.rows == 0)
+            _labelSegmentation = hist.clone();
+        else{
+           /* printf(" ACTUAL\n");
+            for( int h = 0; h < 60; h++ )
+            {
+                float binVal = _labelSegmentation.at<float>(h);
+                if (binVal != 0)printf("%d %f\n",h,binVal);
+            }
+            printf("-----\n");//*/
+            MatND dest;
+            add(_labelSegmentation,hist,_labelSegmentation);
+
+                        
+            //bitwise_or(_labelNeighbours,hist,_labelNeighbours);
+           // _labelNeighbours = _labelNeighbours + hist;
+        }
+        
+       
+        /*printf(" DESPUES %d %d\n",_id,_numPixels);
+        for( int h = 0; h < 60; h++ )
+        {
+            float binVal = _labelSegmentation.at<float>(h);
+            if (binVal != 0)printf("%d %f\n",h,binVal);
+        }
+        printf("-----\n");//*/
+    }
     
     //first neighbours
     set<int> getFirstNeighbours(){ return _firstNeighbours;}
@@ -105,20 +126,20 @@ class SuperPixel
         
         calcHist(&labels, 1, chnls, _mask, _labelHist,1,hsize,ranges);
         
-       /*  printf("%d %d\n",_id,_numPixels);
-        for( int h = 0; h < nbins; h++ )
-        {
-            float binVal = _labelHist.at<float>(h);
-            printf("%d %f\n",h,binVal);
-        }
+        /*  printf("%d %d\n",_id,_numPixels);
+         for( int h = 0; h < nbins; h++ )
+         {
+         float binVal = _labelHist.at<float>(h);
+         printf("%d %f\n",h,binVal);
+         }
          printf("-----\n");//*/
         
         double maxVal=0;
         Point maxBin;
         minMaxLoc(_labelHist, 0, &maxVal, 0, &maxBin);
         
-       /* imshow("HIST labels",paintHistogram(_labelHist));
-        waitKey(0);//*/
+        /* imshow("HIST labels",paintHistogram(_labelHist));
+         waitKey(0);//*/
         
         switch (mode) {
                 
@@ -126,7 +147,7 @@ class SuperPixel
                 if ( (maxBin.y == 0) && (maxVal < _numPixels)) //select other label before 0
                 {
                     int b2,maxVal2=0.0;
-                
+                    
                     for(int i=1;i < nbins;i++)
                     {
                         float value = _labelHist.at<float>(i);
@@ -150,25 +171,87 @@ class SuperPixel
                 int b;
                 //for each bin
                 for(b=0;b < nbins && count <= medianValue;b++)
-            {
-                float value = _labelHist.at<float>(b);
-                count += (int) value;
-            }
+                {
+                    float value = _labelHist.at<float>(b);
+                    count += (int) value;
+                }
                 _label = (b - 1);
                 break;
         }
         
         return _label;
-
+        
     }//create_labelHist
-
+    
+    int create_labelSegmentation(Mat seg, int NUMLABELS, int mode = MODE_LABEL_MEDIAN)
+    {
+        int nbins = NUMLABELS; //  NUMLABELS levels
+        int hsize[] = { nbins }; // just one dimension
+        
+        float range[] = { 0, (const float)(NUMLABELS) };
+        const float *ranges[] = { range };
+        int chnls[] = {0};
+        
+        //resize
+        
+        calcHist(&seg, 1, chnls, _mask, _labelSegmentation,1,hsize,ranges);
+        
+        double maxVal=0;
+        Point maxBin;
+        minMaxLoc(_labelSegmentation, 0, &maxVal, 0, &maxBin);
+        
+        /* imshow("HIST labels",paintHistogram(_labelHist));
+         waitKey(0);//*/
+        
+        int label;
+        switch (mode) {
+                
+            case MODE_LABEL_NOTZERO:
+                if ( (maxBin.y == 0) && (maxVal < _numPixels)) //select other label before 0
+                {
+                    int b2,maxVal2=0.0;
+                    
+                    for(int i=1;i < nbins;i++)
+                    {
+                        float value = _labelSegmentation.at<float>(i);
+                        if (value > maxVal2)
+                        {
+                            b2=i;
+                            maxVal2=value;
+                        }
+                    }
+                    label = b2;
+                }
+                else
+                    label =  (int) maxBin.y;
+                break;
+                
+            case MODE_LABEL_MEDIAN:
+            default:
+                //select the median bin
+                float medianValue = (float)((_numPixels/2)+1)/(float)_numPixels;
+                float count=0.0;
+                int b;
+                //for each bin
+                for(b=0;b < nbins && count <= medianValue;b++)
+                {
+                    float value = _labelSegmentation.at<float>(b);
+                    count += (int) value;
+                }
+                label = (b - 1);
+                break;
+        }
+        
+        return label;
+        
+    }//create_labelHist
+    
     /***************/
     //DESCRIPTORS
     /***************/
     
     Mat descriptorsLAB(Mat image, int NBINS_L = 101, int NBINS_AB=256)
     {
-        // return Mat(1,101+256+256,CV_32FC1)
         Mat descriptor = Mat::zeros(1, NBINS_L+NBINS_AB+NBINS_AB, CV_32FC1);
         
         Mat image_out;
@@ -311,50 +394,149 @@ class SuperPixel
             descriptor.at<float>(0,b)=(binVal / (float)_numPixels);
             //printf("%d %f\n",b,binVal);
         }
-         imshow("Hist GRAY",paintHistogram(hist));
+        
+        if (_DEBUG == 1) imshow("Hist GRAY",paintHistogram(hist));
         hist.release();
         img.release();
         return descriptor;
     }//descriptorsPEAKS
     
-    Mat descriptorsEDGES(Mat image, int BINS = 100)
+    Mat descriptorsEDGES(Mat image, int BINS = 4, int mode = 1 )
     {
-       //image is BGR float
+        //mode = 0: histogram
+        //mode = 1: moments mean stdDes skew kurtosis
+        //mode = 2: hist + moments
+        
+        int momentsSIZE = 4;
+        //image is BGR float
         Mat out;
+        
+        
         Mat descriptor = Mat::zeros(1, BINS, CV_32FC1);
-        
         cvtColor(image, out, CV_BGR2GRAY);
-        out.convertTo(out, CV_32FC1,1/255.0,0);
-       /* double min, max;
-        cv::minMaxLoc(image, &min, &max);
-        printf("IMAGe min %f max %f \n",min,max);
-        cv::minMaxLoc(out, &min, &max);
-        printf("OOT min %f max %f \n",min,max);*/
+        out.convertTo(out, CV_32FC1,1.0/255.0,0);
         
-        int nbins = BINS; // levels
-        int hsize[] = { nbins }; // just one dimension
-        
-        float range[] = { 0, (const float)(1.0)};
-        const float *ranges[] = { range };
-        int chnls[] = {0};
-        
-        MatND hist;
-        
-        calcHist(&out, 1, chnls, _mask, hist,1,hsize,ranges);
-        
-        for(int b = 0; b < nbins; b++ )
+        //HISTOGRAM
+        if (mode == 0 || mode == 2)
         {
-            float binVal = hist.at<float>(b);
-            descriptor.at<float>(0,b)=(binVal / (float)_numPixels);
-           // printf("%d \t %f\n",b,binVal);
+            int nbins = BINS; // levels
+            int hsize[] = { nbins }; // just one dimension
+            
+            float range[] = { 0, (const float)(1.0)};
+            const float *ranges[] = { range };
+            int chnls[] = {0};
+            
+            MatND hist;
+            
+            calcHist(&out, 1, chnls, _mask, hist,1,hsize,ranges);
+            
+            for(int b = 0; b < nbins; b++ )
+            {
+                float binVal = hist.at<float>(b);
+                if (mode == 0 || mode == 2) descriptor.at<float>(0,b)=(binVal / (float)_numPixels);
+                // printf("%d \t %f\n",b,binVal);
+            }
+            
+            if (_DEBUG == 1) imshow("Hist EDGES",paintHistogram(hist));
+            
+            hist.release();
         }
-        imshow("Hist EDGES",paintHistogram(hist));
-        hist.release();
+        
+        //MOMENTS
+        if (mode == 1 || mode == 2)
+        {
+            cvtColor(image, out, CV_BGR2GRAY);
+            out.convertTo(out, CV_32FC1,1.0/255.0,0);
+            
+            
+            Mat mask = Mat::zeros(out.rows,out.cols,CV_32FC1);
+            out.copyTo(mask, _mask);
+            
+            double min, max;
+            minMaxLoc(mask, &min, &max);
+            Scalar     mean, stddev;
+            meanStdDev ( mask, mean, stddev, _mask );
+            
+            float mc3,mc4;
+
+            mc3=0;
+            mc4=0;
+
+            for (int x = 0; x < mask.rows; x++)
+            {
+                for (int y = 0; y < mask.cols; y++)
+                {
+                    if (_mask.at<uchar>(x,y) != 0)
+                    {
+                        mc3 = mc3 + ( pow( (float)mask.at<float>(x,y) - (float)mean.val[0] , 3) );
+                        mc4 = mc4 + ( pow( (float)mask.at<float>(x,y) - (float)mean.val[0] , 4) );
+                    }
+
+                }
+            }
+            mc3 = mc3  / (float) _numPixels;
+            mc4 = mc4  / (float) _numPixels;
+            
+            float s = 0.0;
+            float k = 0.0;
+            //normalize
+            if ((float)stddev.val[0] != 0)
+            {
+                 s = (mc3 / pow((float)stddev.val[0],3) ) / (float) _numPixels;
+                 k = (mc4 / pow((float)stddev.val[0],4))/ (float) _numPixels ;
+            }
+
+            
+           if (_DEBUG == 1) printf("EDGES %d [%f,%f] mean %f stdDev %f s %f k %f \n",_id, mc3,mc4, mean.val[0],stddev.val[0],s,k); //getchar();//*/
+
+            int b;
+            if (mode == 1)
+                b = 0;
+            else
+                b = BINS - momentsSIZE;
+            
+            descriptor.at<float>(0,b++) = mean.val[0];
+            descriptor.at<float>(0,b++) = stddev.val[0];
+            descriptor.at<float>(0,b++) =  s;
+            descriptor.at<float>(0,b++) =  k;
+           
+            mask.release();
+            
+            return  descriptor;
+        }
+
         out.release();
+
         return  descriptor;
         
     }//descriptorsEDGES
     
+    /*Mat descriptorsCAFFE(Mat image, string CAFFE_LAYER = "fc7", int NUMCAFFE = 4096)
+    {
+         utilsCaffe caffe("/Users/acambra/Dropbox/test_caffe/bvlc_reference_caffenet.caffemodel","/Users/acambra/Dropbox/test_caffe/deploy.prototxt");
+         //crop!!!!!!
+         //Mat cv_img = imread("/Users/acambra/Dropbox/test_caffe/cat.jpg", CV_LOAD_IMAGE_COLOR);; // Input
+         //caffe.features(cv_img, "conv3");
+        return caffe.features(image, "fc7").clone();
+    }//descriptorsCAFFE*/
+    
+    Mat descriptorsSEMANTIC(int SEMANTIC_LABELS = 60)
+    {
+        
+        Mat descriptor = Mat::zeros(1, SEMANTIC_LABELS, CV_32FC1);
+        MatND histN;
+        normalize(_labelSegmentation, histN);
+        
+        //convert _labelSegmentation
+        for( int h = 0; h < SEMANTIC_LABELS; h++ )
+        {
+            float binVal = histN.at<float>(h);
+            printf("histN %d %f \n",h,binVal);
+            descriptor.at<float>(0,h)=binVal;
+        }
+        histN.release();
+        return descriptor;
+    }
     
     Mat descriptorsLINES(Mat image, int BINS = 8)
     {
@@ -368,7 +550,7 @@ class SuperPixel
         
         //int edgeThresh = 1;
         int lowThreshold = 10;
-       // int const max_lowThreshold = 100;
+        // int const max_lowThreshold = 100;
         int ratio = 3;
         int kernel_size = 3;
         /// Reduce noise with a kernel 3x3
@@ -389,17 +571,16 @@ class SuperPixel
             printf("%f\n",dis);
             
             if (dis < 35)
-            
+                
                 line( detected_edges, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,0), 3, 8 );
-           
+            
             //imshow("lines",detected_edges); waitKey(0);
         }
-        
-        
+
         /// Using Canny's output as a mask, we display our result
-
+        
         return  detected_edges;
-
+        
     }//descriptorsLINES
     
     //VECINOS
@@ -410,10 +591,10 @@ class SuperPixel
     Mat paintHistogram (MatND hist)
     {
         
-       // MatND hist = _labelHist.clone();
+        // MatND hist = _labelHist.clone();
         
         // Plot the histogram
-
+        
         int hist_w = 300; int hist_h = 200;
         int bin_w = cvRound( (double) hist_w/hist.size[0] );
         
@@ -430,7 +611,7 @@ class SuperPixel
         return histImage;
     }//paintHistogram
     
-
+    
 };
 
 #endif // SUPERPIXEL_H
