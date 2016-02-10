@@ -23,27 +23,42 @@ cmake_minimum_required(VERSION 2.8.9)
   ##################################################################################
   #   PATH  OpenCV
   ##################################################################################
-
-    
   find_package(OpenCV REQUIRED)
   include_directories(${OpenCV_INCLUDES})
-  
-  
+
+  ##################################################################################
+  #   PATH  CAFFE, cuda, blas
+  ##################################################################################
+  set(CAFFE_ROOT /Users/acambra/caffe-master/distribute)
+
+  include_directories(${CAFFE_ROOT}/include)
+  include_directories(/Developer/NVIDIA/CUDA-7.5/include)
+  include_directories(/System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/Headers)
+
+  # libs
+
+  set (CMAKE_FLAGS_CAFFE "-Wno-deprecated-declarations -Wno-missing-braces")
+  set (caffe_LIBS ${CAFFE_ROOT}/lib/libcaffe.so)
+  set (glog_LIBS /usr/local/lib/libglog.dylib)
+  set (protobuf_LIBS /usr/local/lib/libprotobuf.dylib)
+
+
   ##################################################################################
   #     Compiler FLAGS
   ##################################################################################
-  set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -std=gnu++11 -stdlib=libc++")
+  set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -std=gnu++11 -stdlib=libc++ ${CMAKE_FLAGS_CAFFE}")
 
- 
   ##################################################################################
-  #     paths: include and lib
+  #     paths: include and lib user
   ##################################################################################
 
   include_directories(libs)
   include_directories(libs/lib_slic)
   include_directories(${VLFEAT_INCLUDE_DIRS})
 
-find_package(Boost COMPONENTS system filesystem program_options REQUIRED)
+
+  find_package(Boost COMPONENTS system filesystem program_options REQUIRED)
+
 
   ##################################################################################
   #     src
@@ -54,12 +69,14 @@ find_package(Boost COMPONENTS system filesystem program_options REQUIRED)
         src/superpixel.cpp
         src/superpixels.cpp
         src/labelSet.cpp
+        src/utilsCaffe.cpp
         src/test_superpixels.cpp)
 
 
 
-  target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${VLFEAT_LIBRARIES}/libvl.dylib slic ${Boost_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${VLFEAT_LIBRARIES}/libvl.dylib slic ${Boost_LIBRARIES} ${caffe_LIBS} ${glog_LIBS} ${protobuf_LIBS})
 
   file(COPY ${VLFEAT_LIBRARIES}/libvl.dylib DESTINATION ${CMAKE_BINARY_DIR}/Debug)
+  file(COPY ${CAFFE_ROOT}/lib/libcaffe.so DESTINATION ${CMAKE_BINARY_DIR}/Debug)
 
 
