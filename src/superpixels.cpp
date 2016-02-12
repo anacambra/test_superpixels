@@ -15,6 +15,8 @@ using namespace cv;
 #include "superpixel.cpp"
 #include "labelSet.cpp"
 
+#include <time.h>
+
 //vlfeat
 #include "vl/generic.h"
 #include "vl/slic.h"
@@ -47,24 +49,42 @@ class SuperPixels
     int NUMLABELS;
     
     unsigned char _DEBUG = 1;
-
     
 public:
     
     SuperPixel *_arraySP;
     int maxID;
     
-    utilsCaffe *_caffe;
+    //utilsCaffe *_caffe;
+    
+    //time
+    
+    float timeSuperpixels = 0.0;
+    float timeLAB = 0.0;
+    float timeRGB = 0.0;
+    float timeEDGES = 0.0;
+    float timeCAFFE = 0.0;
+    float timeSEMANTIC = 0.0;
+    
     
     SuperPixels()
     {   maxID=0;
     }
-    ~SuperPixels(){ _image.release(); _ids.release(); _sobel.release(); _labels.release(); _labelsInput.release(); delete[] _arraySP; /*if (_caffe != NULL) delete _caffe;*/}
-    
-    void initCaffe()
+    ~SuperPixels()
     {
-         _caffe = new utilsCaffe("/Users/acambra/Dropbox/test_caffe/bvlc_reference_caffenet.caffemodel","/Users/acambra/Dropbox/test_caffe/deploy.prototxt");
+        _image.release();
+        _ids.release();
+        _sobel.release();
+        _labels.release();
+        _labelsInput.release();
+        delete[] _arraySP;
+        //delete _caffe;
     }
+    
+    /*void initCaffe(string model, string proto)
+    {
+         _caffe = new utilsCaffe(model,proto);
+    }*/
     
     void activeDEBUG(){ _DEBUG = 1;}
     void desactiveDEBUG(){ _DEBUG = 0;}
@@ -87,11 +107,11 @@ public:
             
             if(_image.data == NULL)
             {
-                printf("Image %s not found\n",path.c_str());
+                printf("Superpixels::Image %s not found\n",path.c_str());
                 return;
             }
             else
-                printf("Mat _image CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
+                printf("Superpixels::Mat _image CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
             
             _ids= Mat::zeros(_image.rows,_image.cols,CV_32FC1);
             _sobel= Mat::zeros(_image.rows,_image.cols,CV_8UC1);
@@ -111,9 +131,11 @@ public:
         {
             fclose(f);
             
-            if (_DEBUG == 1) start = clock();
+            start = clock();
             
             loadSuperPixels(name);
+            
+            timeSuperpixels = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
             
             if (_DEBUG == 1) printf("**** TIME: load Superpixels: %f seconds\n ",(float) (((double)(clock() - start)) / CLOCKS_PER_SEC) );
         }
@@ -162,6 +184,7 @@ public:
         Mat im= _image.clone();
         Scalar* color = new cv::Scalar( 0, 0, 255 );
         im.setTo(*color,_sobel);
+        delete color;
         return im;
     }
     
@@ -170,7 +193,7 @@ public:
         Mat im =image.clone();
         Scalar* color = new cv::Scalar( 0, 0, 255 );
         im.setTo(*color,_arraySP[id].getMask());
-        
+        delete color;
         return im;
     }//paintSuperpixel
     
@@ -197,7 +220,8 @@ public:
         {
             im.setTo(*color,_arraySP[*it].getMask());
         }
-        
+        delete color;
+    
         return im;
     }//paintNeighboursSuperpixel
     
@@ -388,7 +412,7 @@ public:
             fclose(f);
             
         }catch(int e){
-            printf("Exception!");}
+            printf("Superpixels:: Exception!");}
         
     }//superpixels2file
     
@@ -512,10 +536,10 @@ public:
                 mask_sp.release();
             }
             
-             printf("MAX superpixels %d\n",maxID);
+             printf("Superpixels:: Num superpixels %d\n",maxID);
         }
         else{
-            printf("_ids superpixels NULL \n");
+            printf("Superpixels:: _ids superpixels NULL \n");
             return;
         }
         
@@ -641,21 +665,27 @@ public:
                               int mPEAKS = 0, int NBINS_PEAKS = 64,
                               int mEDGES = 0, int NBINS_EDGES = 100, int modeEDGES = 2, Mat edges = Mat::zeros(1,1,CV_32FC3),
                               int mCAFFE = 0, string CAFFE_LAYER = "fc7", int NUMCAFFE = 4096,
-                              int mSEMANTIC = 0, int SEMANTIC_LABELS = 60)
+                              int mSEMANTIC = 0, int SEMANTIC_LABELS = 60, Mat seg = Mat())
     {
         Mat des;
         
         if (mLAB != 0)
         {
+            
+            clock_t start = clock();
             des=_arraySP[i].descriptorsLAB(image,NBINS_L,NBINS_AB).clone();
+            timeLAB = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
+            
         }
         
         if (mRGB != 0)
         {
+            clock_t start = clock();
             if (des.rows != 0)
                 hconcat(_arraySP[i].descriptorsRGB(image,NBINS_RGB), des,des);
             else
                 des=_arraySP[i].descriptorsRGB(image,NBINS_RGB).clone();
+            timeRGB = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
         }
         
         if (mPEAKS != 0)
@@ -668,14 +698,17 @@ public:
         
         if (mEDGES != 0)
         {
+            clock_t start = clock();
             if (des.rows != 0)
                 hconcat(_arraySP[i].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES), des,des);
             else
                 des=_arraySP[i].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES).clone();
+            timeEDGES = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
         }
         
-        if (mCAFFE != 0)
+       /* if (mCAFFE != 0)
         {
+            clock_t start = clock();
             Mat imageSP = cropSuperpixel(image,i,1).clone();
             
             Mat desCaf= _caffe->features(imageSP, "fc7").clone();
@@ -688,17 +721,18 @@ public:
             
             printf("Caffe des %d values[%f,%f] mean %f stdDev %f \n",i, min, max,mean.val[0],stddev.val[0]);*/
             
-            if (des.rows != 0)
+            /*if (des.rows != 0)
                 hconcat(desCaf,des,des);//_arraySP[i].descriptorsCAFFE(imageSP,CAFFE_LAYER,NUMCAFFE), des,des);
             else
                 des=desCaf.clone();//_arraySP[i].descriptorsCAFFE(imageSP,CAFFE_LAYER,NUMCAFFE).clone();
             
-            printf("Descriptors Caffe %d\n",i);
+            //printf("Descriptors Caffe %d\n",i);
+            timeCAFFE = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
             
             imageSP.release();
             desCaf.release();
             
-        }
+        }*/
         
         if (mSEMANTIC != 0)
         {
@@ -706,6 +740,7 @@ public:
                 hconcat(_arraySP[i].descriptorsSEMANTIC(SEMANTIC_LABELS),des,des);
             else
                 des=_arraySP[i].descriptorsSEMANTIC(SEMANTIC_LABELS).clone();
+            
         }
         /*for (int i=0; i< des.cols; i++) {
          printf("%d %f\n",i,des.at<float>(i));
@@ -731,15 +766,15 @@ public:
                    
             if(_labelsInput.data == NULL)
             {
-                printf("Image Labeling %s not found\n",path.c_str());
+                printf("Superpixels::Image Labeling %s not found\n",path.c_str());
                 return Mat::zeros(100, 100, CV_8UC1);
             }
             else
-                printf("Mat _labels CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
+                printf("Superpixels::Mat _labels CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
         }
         catch(int e)
         {
-            printf("Image Labeling %s not found\n",path.c_str());
+            printf("Superpixels::Image Labeling %s not found\n",path.c_str());
             return Mat::zeros(100, 100, CV_8UC1);
         }
         Mat im;
@@ -779,15 +814,15 @@ public:
             
             if(seg.data == NULL)
             {
-                printf("Image Segmentation %s not found\n",path.c_str());
+                printf("Superpixels::Image Segmentation %s not found\n",path.c_str());
                 return Mat::zeros(100, 100, CV_8UC1);
             }
             else
-                printf("Mat segmentation CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
+                printf("Superpixels::Mat segmentation CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
         }
         catch(int e)
         {
-            printf("Image Segmentation %s not found\n",path.c_str());
+            printf("Superpixels::Image Segmentation %s not found\n",path.c_str());
             return Mat::zeros(100, 100, CV_8UC1);
         }
         Mat im;
@@ -814,6 +849,7 @@ public:
     
     void calculateLabelingNeighbours()
     {
+        clock_t start = clock();
         for (int id1=0; id1 < maxID+1; id1++)
         {
             //get neighbour
@@ -826,6 +862,7 @@ public:
                 _arraySP[id1].addHistogramLabelSegmentation(_arraySP[*it].getLabelSegmentation());
             }
         }
+        timeSEMANTIC = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);///(float) maxID;
     }//calculateLabelingNeighbour*/
     
 

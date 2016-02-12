@@ -40,6 +40,8 @@ class SuperPixel
     
 public:
     
+    float timeLAB = 0.0;
+    
     SuperPixel(){ _id = -1; _numPixels = 0; _mask = Mat::zeros(0, 0, 0);  _label = -1; }
     ~SuperPixel(){ _mask.release();} ;
     
@@ -252,6 +254,8 @@ public:
     
     Mat descriptorsLAB(Mat image, int NBINS_L = 101, int NBINS_AB=256)
     {
+        clock_t start = clock();
+        
         Mat descriptor = Mat::zeros(1, NBINS_L+NBINS_AB+NBINS_AB, CV_32FC1);
         
         Mat image_out;
@@ -314,6 +318,7 @@ public:
         spl[2].release();
         image_out.release();
         
+        timeLAB = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
         return descriptor;
     }//descriptorsLAB
     
@@ -487,7 +492,7 @@ public:
             }
 
             
-           if (_DEBUG == 1) printf("EDGES %d [%f,%f] mean %f stdDev %f s %f k %f \n",_id, mc3,mc4, mean.val[0],stddev.val[0],s,k); //getchar();//*/
+           if (_DEBUG == 1) printf("Superpixel::EDGES %d [%f,%f] mean %f stdDev %f s %f k %f \n",_id, mc3,mc4, mean.val[0],stddev.val[0],s,k); //getchar();//*/
 
             int b;
             if (mode == 1)
@@ -520,6 +525,22 @@ public:
         return caffe.features(image, "fc7").clone();
     }//descriptorsCAFFE*/
     
+    Mat descriptorsNORMALS(Mat image, int BINS = 4, int mode = 1 )
+    {
+        Mat out;
+        
+        Mat descriptor = Mat::zeros(1, BINS, CV_32FC1);
+        cvtColor(image, out, CV_BGR2GRAY);
+        out.convertTo(out, CV_32FC1,1.0/255.0,0);
+        double min, max;
+        minMaxLoc(out, &min, &max);
+        
+        printf("Superpixel:: values [%f,%f] \n",min,max);
+        imshow("NORMALS",out);waitKey(0);
+        
+        return out;
+    }
+
     Mat descriptorsSEMANTIC(int SEMANTIC_LABELS = 60)
     {
         
@@ -531,7 +552,7 @@ public:
         for( int h = 0; h < SEMANTIC_LABELS; h++ )
         {
             float binVal = histN.at<float>(h);
-            printf("histN %d %f \n",h,binVal);
+            printf("Superpixel:: histN %d %f \n",h,binVal);
             descriptor.at<float>(0,h)=binVal;
         }
         histN.release();
