@@ -46,8 +46,8 @@ public:
     utilsCaffe(string model, string proto)
     {
         caffe::Caffe::set_mode(caffe::Caffe::CPU);
-        
         net = new  caffe::Net<float>(proto,caffe::TEST);
+       // printf("Model CAFFE: %s PROTO: %s\n",model.c_str(),proto.c_str());
         net->CopyTrainedLayersFrom(model);
         
         //check size data layer
@@ -65,7 +65,7 @@ public:
     ~utilsCaffe()
     {
       // if (net != NULL)
-           delete net;
+           //delete net;
     }
     
     

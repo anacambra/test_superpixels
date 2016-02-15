@@ -552,7 +552,7 @@ public:
         for( int h = 0; h < SEMANTIC_LABELS; h++ )
         {
             float binVal = histN.at<float>(h);
-            printf("Superpixel:: histN %d %f \n",h,binVal);
+            //printf("Superpixel:: histN %d %f \n",h,binVal);
             descriptor.at<float>(0,h)=binVal;
         }
         histN.release();

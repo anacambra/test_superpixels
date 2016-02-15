@@ -9,7 +9,7 @@
 #include <iostream>
 
 #include "superpixels.cpp"
-#include <time.h>
+//#include <time.h>
 
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
@@ -122,7 +122,6 @@ int main(int argc, const char * argv[]) {
     }
     
     
-    
     if (parameters.find("v") != parameters.end()) {
         DEBUG = true;
     }
@@ -153,13 +152,6 @@ int main(int argc, const char * argv[]) {
         
     }
     
-    if (parameters["svmOptions"].as<std::string>().find("CAFFE") != std::string::npos)
-    {
-        mCAFFE = 1;
-        //initCaffe
-        _caffe = new utilsCaffe("/Users/acambra/Dropbox/test_caffe/bvlc_reference_caffenet.caffemodel",
-                                "/Users/acambra/Dropbox/test_caffe/deploy.prototxt");
-    }
     if (parameters["svmOptions"].as<std::string>().find("SEMANTIC") != std::string::npos)
         mSEMANTIC = 1;
     
@@ -178,19 +170,34 @@ int main(int argc, const char * argv[]) {
         ifstream infile(nameSVM2);
         if (! infile.good()) {
             
+            if (parameters["svmOptions"].as<std::string>().find("CAFFE") != std::string::npos)
+            {
+                mCAFFE = 1;
+                //initCaffe
+                string model = "/Users/acambra/Dropbox/test_caffe/bvlc_reference_caffenet.caffemodel";
+                string proto = "/Users/acambra/Dropbox/test_caffe/deploy.prototxt" ;
+                //printf("Model CAFFE: %s PROTO: %s\n",model.c_str(),proto.c_str());getchar();
+                
+                _caffe = new utilsCaffe(model,proto);
+            }
+            
             trainSVMText("/Users/acambra/Dropbox/dataset/ICDAR/ch4_training_images",
                               "/Users/acambra/Dropbox/dataset/ICDAR/masks",
                               "/Users/acambra/Dropbox/dataset/ICDAR/ch4_training_images/edges",
                               "/Users/acambra/Dropbox/pascalcontext/ICDAR-fcn8",
                               nSAMPLES,
                               nameSVM2,
-                             "/Users/acambra/TESIS/CODE/GibHub_test_superpixels/build/Debug/train/des_"+nameSVM+".yaml");
+                             "/Users/acambra/TESIS/CODE/GibHub_test_superpixels/build/Debug/train/des_"+ nameSVM +".yaml");
+            if (_caffe) delete _caffe;
+            
+            printf("\n\t* SVM save: %s\n\n", nameSVM2.c_str());
+
         }
         else{
-            printf("\t* SVM Load: %s\n", nameSVM2.c_str());
+            printf("\n\t* SVM Load: %s\n\n", nameSVM2.c_str());
         }
         
-    }//parameters.find("svmTrain")
+    }//parameters.find("svmTrain")*/
     
     ////////////////////////
     //evaluate test SVM
@@ -208,7 +215,10 @@ int main(int argc, const char * argv[]) {
         
         string nameImage = inputImage.string();
         string nameGT = parameters["labeled"].as<std::string>();
-        string nameSegmen = parameters["semantic"].as<std::string>();
+        string nameSegmen ="";
+        if (mSEMANTIC == 1)
+            nameSegmen = parameters["semantic"].as<std::string>();
+       
         SuperPixels *SPCTE;
         
         SPCTE= svmSuperpixelsTEXT(nameImage,2,nameGT,nameSegmen);
@@ -233,6 +243,9 @@ int main(int argc, const char * argv[]) {
         string nameWindow = "Superpixel ";
         
         //test
+        
+        clock_t start = clock();
+
         for (int id=0; id < SPCTE->maxID+1; id++)
         {
             if (DEBUG == 1) {
@@ -260,13 +273,12 @@ int main(int argc, const char * argv[]) {
             
             //calculate descriptor superpixel
             
-            clock_t start = clock();
             
             Mat desID = descriptorText(SPCTE, id, nameEdges, nameSegmen);
             
             
             //evaluate SVM
-           /* float response = SVM.predict(desID);//,true);
+            float response = SVM.predict(desID);//,true);
             printf("RESPONSE SVM id: %d  %f\n",id,response);
             
             //paint image with SVM response
@@ -279,16 +291,6 @@ int main(int argc, const char * argv[]) {
                 nameWindow = "Superpixel " + to_string(id);
                 imshow(nameWindow.c_str(),SPCTE->cropSuperpixel(SPCTE->getImageSuperpixels().clone(),id,3));
                 
-                printf("==================================================\n");
-                printf("**** \tTIME %s %f seconds\n",parameters["svmOptions"].as<std::string>().c_str(),(float) (((double)(clock() - start)) / CLOCKS_PER_SEC));
-                printf("==================================================\n");
-                printf("**** Superpixels: %f seconds\n ",SPCTE->timeSuperpixels);
-                if (mLAB == 1)      printf("**** LAB: %f %f seconds\n ",SPCTE->timeLAB,SPCTE->_arraySP[id].timeLAB);
-                if (mRGB == 1)      printf("**** RGB: %f seconds\n ",SPCTE->timeRGB);
-                //if (mPEAKS == 1)    printf("**** LAB: %f seconds\n ",SPCTE->timeLAB);
-                if (mEDGES == 1)    printf("**** EDGES: %f seconds\n ",SPCTE->timeEDGES);
-                if (mCAFFE == 1)    printf("**** CAFFE: %f seconds\n ",SPCTE->timeCAFFE);
-                if (mSEMANTIC == 1) printf("**** SEMANTIC: %f seconds\n ",SPCTE->timeSEMANTIC);
                 
                 
                 
@@ -321,9 +323,23 @@ int main(int argc, const char * argv[]) {
             
             }
             
+            desID.release();
+            
             
             
         }//for id SPCTE//*/
+        
+        printf("==================================================\n");
+        printf("**** \tTIME %s %f seconds\n",parameters["svmOptions"].as<std::string>().c_str(),(float) (((double)(clock() - start)) / CLOCKS_PER_SEC));
+        printf("==================================================\n");
+        printf("**** Superpixels: %f seconds\n ",SPCTE->timeSuperpixels);
+        if (mLAB == 1)      printf("**** LAB: %f seconds\n ",SPCTE->timeLAB);
+        if (mRGB == 1)      printf("**** RGB: %f seconds\n ",SPCTE->timeRGB);
+        
+        if (mEDGES == 1)    printf("**** EDGES: %f seconds\n ",SPCTE->timeEDGES);
+        if (mCAFFE == 1)    printf("**** CAFFE: %f seconds\n ",SPCTE->timeCAFFE);
+        if (mSEMANTIC == 1) printf("**** SEMANTIC: %f seconds\n ",SPCTE->timeSEMANTIC);//*/
+
         
         if (DEBUG == 1){
             imshow(nameSVM,imgSP);waitKey(0);}
@@ -333,9 +349,17 @@ int main(int argc, const char * argv[]) {
             string name = "train/test/"+ nameImage.substr(found1+1) + "_" +parameters["svmOptions"].as<std::string>()+ "_" + to_string(nSAMPLES)+ ".png";
             imwrite(name,imgSP);
         }
+        
+        imgSP.release();
+        
+        delete SPCTE;
+
     }//svmTest
 
-
+    
+   // if (mCAFFE == 1) delete _caffe;
+    
+    
     return 0;
     
 }
@@ -426,10 +450,10 @@ Mat descriptorText(SuperPixels *SPCTE, int id, string nameEdges, string nameSegm
             des=desCaf.clone();//_arraySP[i].descriptorsCAFFE(imageSP,CAFFE_LAYER,NUMCAFFE).clone();
         
         //printf("Descriptors Caffe %d\n",i);
-        SPCTE->timeCAFFE = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
+        SPCTE->timeCAFFE += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
         
-        imageSP.release();
-        desCaf.release();
+        //imageSP.release();
+        //desCaf.release();*/
         
     }
     
@@ -507,28 +531,32 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
                 for (int id=0; (id < SPCTE->maxID+1 && (neg+pos) < (nSAMPLES*2)) ; id++)
                 {
                     
-                    Mat desID = descriptorText(SPCTE, id, nameEdges, nameSegmen);
+                    //Mat desID = descriptorText(SPCTE, id, nameEdges, nameSegmen);
                    
                     //ADD desID to SVM and labels
                     int n = neg + pos;
                     
                     if ((SPCTE->_arraySP[id].accLabel(1) == 1.0) && (pos < nSAMPLES))
                     { //text
+                        Mat desID = descriptorText(SPCTE, id, nameEdges, nameSegmen);
                         labels.at<float>(n,0) = (float) LABEL_TEXT;
                         desID.row(0).copyTo(trainingData.row(n));
                         pos = pos + 1;
+                        desID.release();
                     }
                     else
                     {
                         if ((SPCTE->_arraySP[id].accLabel(0) == 1.0) && (neg < nSAMPLES))
                         {
+                            Mat desID = descriptorText(SPCTE, id, nameEdges, nameSegmen);
                             labels.at<float>(n,0) = (float) LABEL_NOTEXT;
                             //add des in trainingData
                             desID.row(0).copyTo(trainingData.row(n));
                             neg = neg + 1;
+                            desID.release();
                         }
                     }
-                    desID.release();
+                    //desID.release();
                 }//for superpixels
                 delete(SPCTE);
             }//if
@@ -556,6 +584,8 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
     SVM.train(trainingData, labels, Mat(), Mat(), params);
     
     SVM.save(nameSVM.c_str());
+    
+    SVM.clear();
     
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////

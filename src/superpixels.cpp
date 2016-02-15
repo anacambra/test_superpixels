@@ -674,7 +674,7 @@ public:
             
             clock_t start = clock();
             des=_arraySP[i].descriptorsLAB(image,NBINS_L,NBINS_AB).clone();
-            timeLAB = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
+            timeLAB += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
             
         }
         
@@ -685,7 +685,7 @@ public:
                 hconcat(_arraySP[i].descriptorsRGB(image,NBINS_RGB), des,des);
             else
                 des=_arraySP[i].descriptorsRGB(image,NBINS_RGB).clone();
-            timeRGB = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
+            timeRGB += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
         }
         
         if (mPEAKS != 0)
@@ -703,7 +703,7 @@ public:
                 hconcat(_arraySP[i].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES), des,des);
             else
                 des=_arraySP[i].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES).clone();
-            timeEDGES = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
+            timeEDGES += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
         }
         
        /* if (mCAFFE != 0)
@@ -712,7 +712,7 @@ public:
             Mat imageSP = cropSuperpixel(image,i,1).clone();
             
             Mat desCaf= _caffe->features(imageSP, "fc7").clone();
-            normalize(desCaf, desCaf);
+            normalize(desCaf, desCaf);*/
             
            /* double min, max;
             minMaxLoc(desCaf, &min, &max);
@@ -862,7 +862,7 @@ public:
                 _arraySP[id1].addHistogramLabelSegmentation(_arraySP[*it].getLabelSegmentation());
             }
         }
-        timeSEMANTIC = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);///(float) maxID;
+        timeSEMANTIC += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);///(float) maxID;
     }//calculateLabelingNeighbour*/
     
 
