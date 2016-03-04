@@ -31,7 +31,7 @@ using namespace cv;
 
 //using namespace boost;
 
-using NetSp = boost::shared_ptr<caffe::Net<float>>;
+using NetSp = boost::shared_ptr<caffe::Net<float> >;
 //using BlobSp = boost::shared_ptr<Blob<float>>;
 /* using SolverSp = std::shared_ptr<caffe::Solver<float>>;*/
 //using MemoryDataLayerSp = boost::shared_ptr<caffe::MemoryDataLayer<float>>;
@@ -45,9 +45,10 @@ public:
     
     utilsCaffe(string model, string proto)
     {
+        
         caffe::Caffe::set_mode(caffe::Caffe::CPU);
         net = new  caffe::Net<float>(proto,caffe::TEST);
-       // printf("Model CAFFE: %s PROTO: %s\n",model.c_str(),proto.c_str());
+        // printf("Model CAFFE: %s PROTO: %s\n",model.c_str(),proto.c_str());
         net->CopyTrainedLayersFrom(model);
         
         //check size data layer
@@ -64,8 +65,8 @@ public:
     
     ~utilsCaffe()
     {
-      // if (net != NULL)
-           //delete net;
+       if (net != NULL)
+           delete net;
     }
     
     

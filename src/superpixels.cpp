@@ -13,7 +13,7 @@
 using namespace cv;
 
 #include "superpixel.cpp"
-#include "labelSet.cpp"
+//#include "labelSet.cpp"
 
 #include <time.h>
 
@@ -26,6 +26,7 @@ using namespace cv;
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <string>
 
 #include "lib_slic/SLIC.h"
 
@@ -63,6 +64,7 @@ public:
     float timeLAB = 0.0;
     float timeRGB = 0.0;
     float timeEDGES = 0.0;
+    float timeEDGESDIR = 0.0;
     float timeCAFFE = 0.0;
     float timeSEMANTIC = 0.0;
     
@@ -72,12 +74,13 @@ public:
     }
     ~SuperPixels()
     {
+         delete[] _arraySP;
         _image.release();
         _ids.release();
         _sobel.release();
         _labels.release();
         _labelsInput.release();
-        delete[] _arraySP;
+       //delete[] _arraySP;
         //delete _caffe;
     }
     
@@ -88,6 +91,11 @@ public:
     
     void activeDEBUG(){ _DEBUG = 1;}
     void desactiveDEBUG(){ _DEBUG = 0;}
+    
+    int numPixels(int id)
+    {
+        return _arraySP[id].getNumPixels();
+    }
     
     /*************************************************************************************
      * SuperPixels: obtain superpixels of an image (path)
@@ -107,11 +115,11 @@ public:
             
             if(_image.data == NULL)
             {
-                printf("Superpixels::Image %s not found\n",path.c_str());
+                printf("Image %s not found\n",path.c_str());
                 return;
             }
             else
-                printf("Superpixels::Mat _image CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
+               if (_DEBUG == 1) printf("Mat _image CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
             
             _ids= Mat::zeros(_image.rows,_image.cols,CV_32FC1);
             _sobel= Mat::zeros(_image.rows,_image.cols,CV_8UC1);
@@ -124,7 +132,7 @@ public:
         }
         
         size_t found = path.find_last_of(".");
-        string name = path.substr(0,found) + "_" + to_string(_TAM_SP)+".sp";
+        std::string name = path.substr(0,found) + "_" + std::to_string(_TAM_SP)+".sp";
         FILE *f = fopen(name.c_str(),"r");
         
         if (f!=NULL)
@@ -137,7 +145,7 @@ public:
             
             timeSuperpixels = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
             
-            if (_DEBUG == 1) printf("**** TIME: load Superpixels: %f seconds\n ",(float) (((double)(clock() - start)) / CLOCKS_PER_SEC) );
+            if (_DEBUG == 1) printf("**** TIME: load Superpixels: %f seconds\n",(float) (((double)(clock() - start)) / CLOCKS_PER_SEC) );
         }
         
         else
@@ -282,7 +290,7 @@ public:
             }
         }
         
-        delete(image);
+        delete[] image;
         delete(segmentation);
         delete(labels);
         
@@ -411,8 +419,10 @@ public:
             
             fclose(f);
             
-        }catch(int e){
-            printf("Superpixels:: Exception!");}
+        }catch(int e)
+        {
+            printf("Exception!");
+        }
         
     }//superpixels2file
     
@@ -528,7 +538,8 @@ public:
         
         if (_ids.data != NULL )
         {
-            for(int i=0; i<=maxID; i++ )
+            //for(int i=0; i<=maxID; i++ )
+            for(int i=maxID; i>=0; --i )
             {
                 Mat mask_sp;
                 mask_sp = (_ids == i);
@@ -536,19 +547,21 @@ public:
                 mask_sp.release();
             }
             
-             printf("Superpixels:: Num superpixels %d\n",maxID);
+             if (_DEBUG == 1) printf("Num superpixels %d\n",maxID);
         }
         else{
-            printf("Superpixels:: _ids superpixels NULL \n");
+            printf("_ids superpixels NULL \n");
             return;
         }
         
         // NEIGHBOUGRS
         
         //first boundaries in _sobel
-        for (int x = 0; x < _sobel.rows; x++)
+        //for (int x = 0; x < _sobel.rows; x++)
+        for (int x = _sobel.rows; x >=0 ; --x)
         {
-            for (int y = 0; y < _sobel.cols; y++)
+            //for (int y = 0; y < _sobel.cols; y++)
+            for (int y = _sobel.cols; y >=0 ; --y)
             {
                 if ( _sobel.at<uchar>(x,y) == 255) //boundarie
                 {
@@ -589,7 +602,8 @@ public:
         }//for x
         
         //second boundaries
-        for (int id=0; id < maxID+1; id++)
+        //for (int id=0; id < maxID+1; id++)
+        for (int id=maxID; id >= 0; --id)
         {
             set<int> neig1 = _arraySP[id].getFirstNeighbours();
             set<int>::iterator it1;
@@ -664,6 +678,7 @@ public:
                               int mRGB   = 0, int NBINS_RGB   = 256,
                               int mPEAKS = 0, int NBINS_PEAKS = 64,
                               int mEDGES = 0, int NBINS_EDGES = 100, int modeEDGES = 2, Mat edges = Mat::zeros(1,1,CV_32FC3),
+                              int mEDDIR = 0, int NBINS_EDDIR = 8, Mat edgesDIR = Mat::zeros(1,1,CV_32FC3),
                               int mCAFFE = 0, string CAFFE_LAYER = "fc7", int NUMCAFFE = 4096,
                               int mSEMANTIC = 0, int SEMANTIC_LABELS = 60, Mat seg = Mat())
     {
@@ -704,6 +719,15 @@ public:
             else
                 des=_arraySP[i].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES).clone();
             timeEDGES += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
+        }
+        if (mEDDIR != 0)
+        {
+            clock_t start = clock();
+            if (des.rows != 0)
+                hconcat(_arraySP[i].descriptorsEDGESDIR(edges,edgesDIR,NBINS_EDDIR), des,des);
+            else
+                des=_arraySP[i].descriptorsEDGESDIR(edges,edgesDIR,NBINS_EDDIR).clone();
+            timeEDGESDIR += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
         }
         
        /* if (mCAFFE != 0)
@@ -759,6 +783,11 @@ public:
         try{
             _labelsInput = imread(path,CV_LOAD_IMAGE_UNCHANGED);
             _labelsInput = (_labelsInput * (NUMLABELS - 1)/ 255) ;
+            
+            if (_labelsInput.rows != _image.rows || _labelsInput.cols != _image.cols)
+            {
+                resize(_labelsInput, _labelsInput, Size(_image.cols,_image.rows));
+            }
 
            /*double min, max;
             cv::minMaxLoc(_labelsInput, &min, &max);
@@ -766,18 +795,18 @@ public:
                    
             if(_labelsInput.data == NULL)
             {
-                printf("Superpixels::Image Labeling %s not found\n",path.c_str());
+                printf("Image Labeling %s not found\n",path.c_str());
                 return Mat::zeros(100, 100, CV_8UC1);
             }
             else
-                printf("Superpixels::Mat _labels CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
+               if (_DEBUG == 1) printf("Mat _labels CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
         }
         catch(int e)
         {
-            printf("Superpixels::Image Labeling %s not found\n",path.c_str());
+            if (_DEBUG == 1) printf("Image Labeling %s not found\n",path.c_str());
             return Mat::zeros(100, 100, CV_8UC1);
         }
-        Mat im;
+        //Mat im;
         for (int id=0; id < maxID+1; id++)
         {
             int l = _arraySP[id].create_labelHist(_labelsInput,NUMLABELS,mode);
@@ -795,47 +824,75 @@ public:
 
     }//initializLabeling
     
-    Mat initializeSegmentation(string path, int numLabels, int mode = MODE_LABEL_MEDIAN)
+    Mat initializeSegmentation(string path, int numLabels, int mode = MODE_LABEL_NOTZERO, int labelSegmen = 60)
     {
         //read image
         Mat seg;
         try{
             seg =  imread(path,CV_LOAD_IMAGE_GRAYSCALE);
-            seg = (seg * (numLabels - 1)/ 255) ;
+            
             
             if ( seg.rows != _image.rows && seg.cols != _image.cols)
             {
-                resize(seg, seg, Size(_image.cols,_image.rows));
+                resize(seg, seg, Size(_image.cols,_image.rows),0,0,INTER_NEAREST);
             }
             
+            //if (labelSegmen == 60)
+                seg = (seg * (labelSegmen)/ 255);
+            //else
+                
+            
+            //////////////////
+           /* labelSet val(12);
+            Mat l = Mat::zeros(seg.rows,seg.cols,CV_8UC3);
+            
+            Mat out = val.paintLabelRandom(seg, 12, &l).clone();
+            imshow("input ",out);
+            imshow("leyend",l);
+            waitKey(0);//*/
+            ///////////////////*/
+            
             /*double min, max;
-             cv::minMaxLoc(_labelsInput, &min, &max);
-             printf("%f %f ",min,max);//*/
+            cv::minMaxLoc(seg, &min, &max);
+            printf("initialize segmentation %f %f\n",min,max);//*/
             
             if(seg.data == NULL)
             {
-                printf("Superpixels::Image Segmentation %s not found\n",path.c_str());
+                printf("Image Segmentation %s not found\n",path.c_str());
                 return Mat::zeros(100, 100, CV_8UC1);
             }
             else
-                printf("Superpixels::Mat segmentation CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
+                if (_DEBUG == 1) printf("Mat segmentation CV_8UC1 rows %d cols %d\n",_image.rows,_image.cols);
         }
         catch(int e)
         {
-            printf("Superpixels::Image Segmentation %s not found\n",path.c_str());
+            printf("Image Segmentation %s not found\n",path.c_str());
             return Mat::zeros(100, 100, CV_8UC1);
         }
-        Mat im;
+        Mat im = Mat::zeros(_image.rows,_image.cols,CV_8UC1);
         labelSet val(numLabels);
-        
-        for (int id=0; id < maxID+1; id++)
+
+        if (numLabels == 23)
         {
-            //int l =
-            _arraySP[id].create_labelSegmentation(seg,numLabels,mode);
-            //_labels.setTo(l,_arraySP[id].getMask());
-           // printf("LABEL: %d %s \n",l,val.getLabel(l).c_str());getchar();
+            seg = val.convert2pascalcontextNoObjects(seg).clone();
         }
         
+        for (int id=0; id < maxID+1; id++)
+        //for (int id=maxID; id >=0; --id)
+        {
+            int l =  _arraySP[id].create_labelSegmentation(seg,numLabels,mode);
+            im.setTo(l,_arraySP[id].getMask());
+            //printf("LABEL: %d %s \n",l,val.getLabel(l).c_str());//getchar();
+        }
+        
+        //////////////////
+        /*labelSet val1(60);
+        Mat l = Mat::zeros(im.rows,im.cols,CV_8UC3);
+        
+        Mat out2 = val1.paintLabelRandom(im, 60, &l).clone();
+        imshow("INITIAL SEGMENTATION",out2);
+        imshow("leyend",l);*/
+        ///////////////////
         //
         calculateLabelingNeighbours();
         
@@ -843,25 +900,42 @@ public:
         Mat leyend= Mat::ones(_image.rows,_image.cols, CV_8UC3);
        
         //leyend.release();
-        
         return val.paintLabelRandom(seg,numLabels,&leyend);
     }
     
     void calculateLabelingNeighbours()
     {
         clock_t start = clock();
+        
+        //create image new
+        Mat newLabels = Mat::zeros(_image.rows,_image.cols, CV_8UC1);
+        
         for (int id1=0; id1 < maxID+1; id1++)
+        //for (int id1=maxID; id1 >=0; --id1)
         {
             //get neighbour
             set<int> neig = _arraySP[id1].getFirstNeighbours();
             
+            int ln=0;
             
             std::set<int>::iterator it;
             for (it=neig.begin(); it!=neig.end(); ++it)
             {
-                _arraySP[id1].addHistogramLabelSegmentation(_arraySP[*it].getLabelSegmentation());
+                ln = _arraySP[id1].addHistogramLabelSegmentation(_arraySP[*it].getLabelSegmentation());
+                //printf("id: %d neig: %d l=%d  %d\n",id1,*it,ln,(int)neig.size());//getchar();
             }
+            
+            _arraySP[id1].normalizeLabelFirstSegmentation((int)neig.size());
+            newLabels.setTo(ln,_arraySP[id1].getMask());
         }
+        
+        /*labelSet val(60);
+        Mat l;// = Mat::zeros(seg.rows,seg.cols,CV_8UC3);
+        val._DEBUG=1;
+        Mat out = val.paintLabelRandom(newLabels, 60, &l).clone();
+        imshow("NEIG SEGMENTATION",out);*/
+        
+        
         timeSEMANTIC += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);///(float) maxID;
     }//calculateLabelingNeighbour*/
     

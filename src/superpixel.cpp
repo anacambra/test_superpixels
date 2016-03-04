@@ -10,6 +10,8 @@
 
 #include "utilsCaffe.cpp"
 
+#include "labelSet.cpp"
+
 using namespace cv;
 using namespace std;
 
@@ -30,6 +32,8 @@ class SuperPixel
     
     MatND _labelHist;
     MatND _labelSegmentation;
+    int maxLabelSegmentation;
+    MatND _labelFirstSegmentation;
     
     MatND hist_l;
     MatND hist_a;
@@ -43,7 +47,7 @@ public:
     float timeLAB = 0.0;
     
     SuperPixel(){ _id = -1; _numPixels = 0; _mask = Mat::zeros(0, 0, 0);  _label = -1; }
-    ~SuperPixel(){ _mask.release();} ;
+    ~SuperPixel(){ /*if (_mask.rows!=0 && _mask.cols !=0) _mask.release();*/}
     
     void activeDEBUG(){ _DEBUG = 1;}
     void desactiveDEBUG(){ _DEBUG = 0;}
@@ -62,10 +66,29 @@ public:
     Mat getMask(){ return _mask;}
     
     MatND getLabelSegmentation(){ return _labelSegmentation;}
+    MatND getFirstLabelSegmentation(){ return _labelFirstSegmentation;}
     
-    void addHistogramLabelSegmentation(MatND hist)
+    void normalizeLabelFirstSegmentation(float i)
     {
-       /* printf("NEW HIST");
+        _labelFirstSegmentation = _labelFirstSegmentation / (float) i;
+       // labelSet val(60);
+       // printf("\nFIRST Neigbourd segmentation: %d %s\n",maxLabelSegmentation,val.getLabel(maxLabelSegmentation).c_str());
+        for( int h = 0; h < 23; h++ )
+        {
+            float binVal = _labelFirstSegmentation.at<float>(h);
+           /* if (binVal != 0)
+            {
+               // printf("%d %f\n",h,binVal);
+                //printf("LABEL: %d %s  %f\n",h,val.getLabel(h).c_str(),binVal);
+            }*/
+        }
+        //getchar();
+    }
+    
+    int addHistogramLabelSegmentation(MatND hist)
+    {
+       //return label maxima
+       /* printf("NEW HIST\n");
         for( int h = 0; h < 60; h++ )
         {
             float binVal = hist.at<float>(h);
@@ -74,32 +97,53 @@ public:
         printf("-----\n");//*/
         
 
-        if (_labelSegmentation.rows == 0)
-            _labelSegmentation = hist.clone();
-        else{
+        if (_labelFirstSegmentation.rows == 0)
+            _labelFirstSegmentation = hist.clone();
+        
+        else{//*/
            /* printf(" ACTUAL\n");
             for( int h = 0; h < 60; h++ )
             {
-                float binVal = _labelSegmentation.at<float>(h);
+                float binVal = _labelFirstSegmentation.at<float>(h);
                 if (binVal != 0)printf("%d %f\n",h,binVal);
             }
-            printf("-----\n");//*/
+           // printf("-----\n");//*/
+        
+        /*printf("NEW HIST\n");
+        for( int h = 0; h < 60; h++ )
+        {
+            float binVal = hist.at<float>(h);
+            if (binVal != 0)printf("%d %f\n",h,binVal);
+        }*/
+       
+        
             MatND dest;
-            add(_labelSegmentation,hist,_labelSegmentation);
+            add(hist,_labelFirstSegmentation,_labelFirstSegmentation);
 
                         
             //bitwise_or(_labelNeighbours,hist,_labelNeighbours);
            // _labelNeighbours = _labelNeighbours + hist;
         }
         
-       
-        /*printf(" DESPUES %d %d\n",_id,_numPixels);
-        for( int h = 0; h < 60; h++ )
+        
+        /*for( int h = 0; h < 60; h++ )
         {
-            float binVal = _labelSegmentation.at<float>(h);
-            if (binVal != 0)printf("%d %f\n",h,binVal);
-        }
-        printf("-----\n");//*/
+            float binVal = _labelFirstSegmentation.at<float>(h);
+            //if (binVal != 0)printf("label %s %d %f\n",labels.getLabel(h).c_str(),h,binVal);
+        }//*/
+        
+       // normalize(_labelSegmentation,_labelSegmentation);
+        
+        //max bin in histogram
+        double maxVal=0;
+        Point bin;
+        minMaxLoc(_labelFirstSegmentation, 0, &maxVal, 0, &bin);
+
+       /* printf("MAX: %d %f ", bin.y,maxVal);
+        printf("-----\n");//getchar();*/
+        
+        return (int)bin.y;
+        
     }
     
     //first neighbours
@@ -110,12 +154,18 @@ public:
     set<int> getSecondNeighbours(){ return _secondNeighbours;}
     void addSecondNeighbours(int n){ if (_id != n) _secondNeighbours.insert(n);}
     
-    string toString(){ return "ID: " + to_string(_id) + " numPixels: " + to_string(_numPixels) + " label: " + to_string(_label);}
+    //string toString(){ return "ID: " + _id + " numPixels: " + to_string(_numPixels) + " label: " + to_string(_label);}
     
     //LABELS
     void setLabel(int l){_label = l;}
     
-    float accLabel(int l){ return _labelHist.at<float>(l)/_numPixels;}
+    float accLabel(int l)
+    {
+        if (_numPixels != 0 && _labelHist.rows > 0 && _labelHist.cols > 0)
+            return _labelHist.at<float>(l)/_numPixels;
+        else return -1;
+    
+    }
     
     int create_labelHist(Mat labels, int NUMLABELS, int mode = MODE_LABEL_MEDIAN)
     {
@@ -185,8 +235,9 @@ public:
         
     }//create_labelHist
     
-    int create_labelSegmentation(Mat seg, int NUMLABELS, int mode = MODE_LABEL_MEDIAN)
+    int create_labelSegmentation(Mat seg, int NUMLABELS, int mode = MODE_LABEL_NOTZERO)
     {
+        
         int nbins = NUMLABELS; //  NUMLABELS levels
         int hsize[] = { nbins }; // just one dimension
         
@@ -197,6 +248,8 @@ public:
         //resize
         
         calcHist(&seg, 1, chnls, _mask, _labelSegmentation,1,hsize,ranges);
+        
+        _labelSegmentation = _labelSegmentation / _numPixels;
         
         double maxVal=0;
         Point maxBin;
@@ -244,6 +297,7 @@ public:
                 break;
         }
         
+        maxLabelSegmentation = label;
         return label;
         
     }//create_labelHist
@@ -408,6 +462,7 @@ public:
     
     Mat descriptorsEDGES(Mat image, int BINS = 4, int mode = 1 )
     {
+        
         //mode = 0: histogram
         //mode = 1: moments mean stdDes skew kurtosis
         //mode = 2: hist + moments
@@ -420,6 +475,12 @@ public:
         Mat descriptor = Mat::zeros(1, BINS, CV_32FC1);
         cvtColor(image, out, CV_BGR2GRAY);
         out.convertTo(out, CV_32FC1,1.0/255.0,0);
+        
+        if (out.rows != _mask.rows || out.cols != _mask.cols)
+        {
+            resize(out, out, Size(_mask.cols,_mask.rows));
+        }
+
         
         //HISTOGRAM
         if (mode == 0 || mode == 2)
@@ -450,8 +511,8 @@ public:
         //MOMENTS
         if (mode == 1 || mode == 2)
         {
-            cvtColor(image, out, CV_BGR2GRAY);
-            out.convertTo(out, CV_32FC1,1.0/255.0,0);
+           /* cvtColor(image, out, CV_BGR2GRAY);
+            out.convertTo(out, CV_32FC1,1.0/255.0,0);*/
             
             
             Mat mask = Mat::zeros(out.rows,out.cols,CV_32FC1);
@@ -525,37 +586,95 @@ public:
         return caffe.features(image, "fc7").clone();
     }//descriptorsCAFFE*/
     
-    Mat descriptorsNORMALS(Mat image, int BINS = 4, int mode = 1 )
+    Mat descriptorsEDGESDIR(Mat edges,Mat edgesDIR, int NBINS_EDGESDIR = 8)
     {
-        Mat out;
+        Mat descriptor = Mat::zeros(1, NBINS_EDGESDIR, CV_32FC1);
         
-        Mat descriptor = Mat::zeros(1, BINS, CV_32FC1);
-        cvtColor(image, out, CV_BGR2GRAY);
-        out.convertTo(out, CV_32FC1,1.0/255.0,0);
+        float maxProb = 0.0;
+        
+        for( int h = 0; h < NBINS_EDGESDIR; h++ )
+            descriptor.at<float>(0,h)=0.0;
+        
+       
+        //edges [0-1] probabiltities Max= 1.0*_numPixels
+        cvtColor(edges, edges, CV_BGR2GRAY);
+        edges.convertTo(edges, CV_32FC1,1.0/255.0,0);
+        
+        if (edges.rows != _mask.rows || edges.cols != _mask.cols)
+        {
+            resize(edges, edges, Size(_mask.cols,_mask.rows));
+        }
+        if (edgesDIR.rows != _mask.rows || edgesDIR.cols != _mask.cols)
+        {
+            resize(edgesDIR, edgesDIR, Size(_mask.cols,_mask.rows));
+        }
+        
+        
+        //edgesDir [0-3.14]
         double min, max;
-        minMaxLoc(out, &min, &max);
+        minMaxLoc(edgesDIR, &min, &max);
         
-        printf("Superpixel:: values [%f,%f] \n",min,max);
-        imshow("NORMALS",out);waitKey(0);
-        
-        return out;
+
+        for (int i=0; i< edgesDIR.rows; i++)
+        {
+            for (int j=0; j< edgesDIR.cols; j++)
+            {
+                if (_mask.at<uchar>(i,j) != 0)
+                {
+                    int b = (int)(edgesDIR.at<float>(i,j)/(max/(float)NBINS_EDGESDIR));
+                    descriptor.at<float>(0,b) += edges.at<float>(i,j);
+                    
+                    maxProb += edges.at<float>(i,j);
+                    
+                }
+            }
+        }
+        //convert hist to mat
+        for( int h = 0; h < NBINS_EDGESDIR; h++ )
+        {
+            descriptor.at<float>(0,h) = descriptor.at<float>(0,h) / maxProb;
+            //float val =  descriptor.at<float>(0,h);
+            //printf("EDGESDIR: %d %f MAX:%f \n",h,val,maxProb);
+        }
+
+        return descriptor;
     }
 
     Mat descriptorsSEMANTIC(int SEMANTIC_LABELS = 60)
     {
         
-        Mat descriptor = Mat::zeros(1, SEMANTIC_LABELS, CV_32FC1);
-        MatND histN;
-        normalize(_labelSegmentation, histN);
+        Mat descriptor = Mat::zeros(1, 2*(SEMANTIC_LABELS), CV_32FC1);
+        //MatND histN;
+        //normalize(_labelSegmentation, histN);
         
+        labelSet labels(SEMANTIC_LABELS);
+       /* printf("---------------------\n");
+        printf("label segmentation\n");*/
         //convert _labelSegmentation
-        for( int h = 0; h < SEMANTIC_LABELS; h++ )
+        for( int h = 0; h < (SEMANTIC_LABELS); h++ )
         {
-            float binVal = histN.at<float>(h);
-            //printf("Superpixel:: histN %d %f \n",h,binVal);
+            float binVal = _labelSegmentation.at<float>(h);
+           /* if (binVal != 0) printf("\t%d %s %f \n",
+                                    h,
+                                    labels.getLabel(h).c_str(),
+                                    binVal);*/
             descriptor.at<float>(0,h)=binVal;
         }
-        histN.release();
+        
+       // printf("neighour segmentation\n");
+        //convert _labelFirstSegmentation
+        for( int h = (SEMANTIC_LABELS); h < 2*(SEMANTIC_LABELS); h++ )
+        {
+            float binVal = _labelFirstSegmentation.at<float>(h-(SEMANTIC_LABELS));
+           /* if (binVal != 0) printf("\t%d %s %f \n",
+                   h-(SEMANTIC_LABELS),
+                   labels.getLabel(h-(SEMANTIC_LABELS)).c_str(),
+                   binVal);*/
+            descriptor.at<float>(0,h)=binVal;
+        }
+       // printf("---------------------\n");
+        
+        //histN.release();
         return descriptor;
     }
     
