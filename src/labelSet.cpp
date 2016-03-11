@@ -64,7 +64,7 @@ class labelSet
     vector<string> _labels;
     
 public:
-    unsigned char _DEBUG = 1;
+    unsigned char _DEBUG = 0;
     
     labelSet(int NUMLABELS)
     {

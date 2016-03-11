@@ -643,25 +643,25 @@ public:
     Mat descriptorsSEMANTIC(int SEMANTIC_LABELS = 60)
     {
         
-        Mat descriptor = Mat::zeros(1, 2*(SEMANTIC_LABELS), CV_32FC1);
+        Mat descriptor = Mat::zeros(1, (SEMANTIC_LABELS), CV_32FC1);
         //MatND histN;
         //normalize(_labelSegmentation, histN);
         
         labelSet labels(SEMANTIC_LABELS);
-       /* printf("---------------------\n");
-        printf("label segmentation\n");*/
+        printf("---------------------\n");
+        printf("label segmentation\n");//*/
         //convert _labelSegmentation
         for( int h = 0; h < (SEMANTIC_LABELS); h++ )
         {
             float binVal = _labelSegmentation.at<float>(h);
-           /* if (binVal != 0) printf("\t%d %s %f \n",
+            if (binVal != 0) printf("\t%d %s %f \n",
                                     h,
                                     labels.getLabel(h).c_str(),
-                                    binVal);*/
+                                    binVal);//*/
             descriptor.at<float>(0,h)=binVal;
         }
         
-       // printf("neighour segmentation\n");
+      /* // printf("neighour segmentation\n");
         //convert _labelFirstSegmentation
         for( int h = (SEMANTIC_LABELS); h < 2*(SEMANTIC_LABELS); h++ )
         {
@@ -670,11 +670,33 @@ public:
                    h-(SEMANTIC_LABELS),
                    labels.getLabel(h-(SEMANTIC_LABELS)).c_str(),
                    binVal);*/
-            descriptor.at<float>(0,h)=binVal;
+        /*    descriptor.at<float>(0,h)=binVal;
         }
-       // printf("---------------------\n");
+       // printf("---------------------\n");*/
         
         //histN.release();
+        return descriptor;
+    }
+    
+    Mat descriptorsCONTEXT(int SEMANTIC_LABELS = 60)
+    {
+        
+        Mat descriptor = Mat::zeros(1, (SEMANTIC_LABELS), CV_32FC1);
+        
+        labelSet labels(SEMANTIC_LABELS);
+        
+         printf("neighour segmentation\n");
+
+        for( int h = 0; h < (SEMANTIC_LABELS); h++ )
+        {
+            float binVal = _labelFirstSegmentation.at<float>(h);
+             if (binVal != 0) printf("\t%d %s %f \n",
+             h,
+             labels.getLabel(h).c_str(),
+             binVal);//*/
+            descriptor.at<float>(0,h)=binVal;
+        }
+        
         return descriptor;
     }
     

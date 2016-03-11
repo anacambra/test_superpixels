@@ -557,12 +557,13 @@ public:
         // NEIGHBOUGRS
         
         //first boundaries in _sobel
-        //for (int x = 0; x < _sobel.rows; x++)
-        for (int x = _sobel.rows; x >=0 ; --x)
+        for (int x = 0; x < _sobel.rows; x++)
+        //for (int x = _sobel.rows; x >=0 ; --x)
         {
-            //for (int y = 0; y < _sobel.cols; y++)
-            for (int y = _sobel.cols; y >=0 ; --y)
+            for (int y = 0; y < _sobel.cols; y++)
+            //for (int y = _sobel.cols; y >=0 ; --y)
             {
+                //printf("x:%d y:%d\n",x,y);
                 if ( _sobel.at<uchar>(x,y) == 255) //boundarie
                 {
                     int id = (int)_ids.at<float>(x,y);
@@ -680,7 +681,8 @@ public:
                               int mEDGES = 0, int NBINS_EDGES = 100, int modeEDGES = 2, Mat edges = Mat::zeros(1,1,CV_32FC3),
                               int mEDDIR = 0, int NBINS_EDDIR = 8, Mat edgesDIR = Mat::zeros(1,1,CV_32FC3),
                               int mCAFFE = 0, string CAFFE_LAYER = "fc7", int NUMCAFFE = 4096,
-                              int mSEMANTIC = 0, int SEMANTIC_LABELS = 60, Mat seg = Mat())
+                              int mSEMANTIC = 0, int SEMANTIC_LABELS = 60,
+                              int mCONTEXT = 0, int CONTEXT_LABELS = 60)
     {
         Mat des;
         
@@ -764,6 +766,15 @@ public:
                 hconcat(_arraySP[i].descriptorsSEMANTIC(SEMANTIC_LABELS),des,des);
             else
                 des=_arraySP[i].descriptorsSEMANTIC(SEMANTIC_LABELS).clone();
+            
+        }
+        
+        if (mCONTEXT != 0)
+        {
+            if (des.rows != 0)
+                hconcat(_arraySP[i].descriptorsCONTEXT(CONTEXT_LABELS),des,des);
+            else
+                des=_arraySP[i].descriptorsCONTEXT(CONTEXT_LABELS).clone();
             
         }
         /*for (int i=0; i< des.cols; i++) {
