@@ -23,6 +23,9 @@ using namespace std;
 #define PASCAL 21
 #define PASCALCONTEXT 60
 
+static vector<string> segnet= {"sky","building", "pole", "roadMarking", "road","pavement",
+    "tree","sign","fence","vehicle","pedestrian","bike"};
+
 class labelSet
 {
 
@@ -53,8 +56,7 @@ class labelSet
     
     vector<string> text = { "background ","text"};
     
-    vector<string> segnet= {"sky","building", "pole", "roadMarking", "road","pavement",
-                            "tree","sign","fence","vehicle","pedestrian","bike"};
+   
     vector<string> segnetNoObjects= {"sky","building", "pole", "roadMarking", "road","pavement",
         "tree","sign","fence","vehicle","pedestrian","bike"};
     //roadMarking == road == pavement

@@ -30,6 +30,8 @@ using namespace cv;
 
 #include "lib_slic/SLIC.h"
 
+#define PI 3.1416
+
 
 using namespace std;
 
@@ -196,10 +198,10 @@ public:
         return im;
     }
     
-    Mat paintSuperpixel(Mat image, int id){
+    Mat paintSuperpixel(Mat image, int id, Scalar *color = new cv::Scalar(0,0,255)){
         
         Mat im =image.clone();
-        Scalar* color = new cv::Scalar( 0, 0, 255 );
+       // Scalar* color = new cv::Scalar( 0, 0, 255 );
         im.setTo(*color,_arraySP[id].getMask());
         delete color;
         return im;
@@ -682,7 +684,9 @@ public:
                               int mEDDIR = 0, int NBINS_EDDIR = 8, Mat edgesDIR = Mat::zeros(1,1,CV_32FC3),
                               int mCAFFE = 0, string CAFFE_LAYER = "fc7", int NUMCAFFE = 4096,
                               int mSEMANTIC = 0, int SEMANTIC_LABELS = 60,
-                              int mCONTEXT = 0, int CONTEXT_LABELS = 60)
+                              int mCONTEXT = 0, int CONTEXT_LABELS = 60,
+                              int mCONTEXT2 = 0, int CONTEXT2_LABELS = 60,
+                              int mGLOBAL = 0, int GLOBAL_LABELS = 60)
     {
         Mat des;
         
@@ -777,6 +781,25 @@ public:
                 des=_arraySP[i].descriptorsCONTEXT(CONTEXT_LABELS).clone();
             
         }
+        
+        if (mCONTEXT2 != 0)
+        {
+            if (des.rows != 0)
+                hconcat(_arraySP[i].descriptorsCONTEXT_ORIENTED(CONTEXT2_LABELS),des,des);
+            else
+                des=_arraySP[i].descriptorsCONTEXT_ORIENTED(CONTEXT2_LABELS).clone();
+                    
+        }
+        
+        if (mGLOBAL != 0)
+        {
+            if (des.rows != 0)
+                hconcat(_arraySP[i].descriptorsCONTEXT_GLOBAL(GLOBAL_LABELS),des,des);
+            else
+                des=_arraySP[i].descriptorsCONTEXT_GLOBAL(GLOBAL_LABELS).clone();
+            
+        }
+
         /*for (int i=0; i< des.cols; i++) {
          printf("%d %f\n",i,des.at<float>(i));
          }//*/
@@ -880,6 +903,7 @@ public:
             printf("Image Segmentation %s not found\n",path.c_str());
             return Mat::zeros(100, 100, CV_8UC1);
         }
+        
         Mat im = Mat::zeros(_image.rows,_image.cols,CV_8UC1);
         labelSet val(numLabels);
 
@@ -889,11 +913,10 @@ public:
         }
         
         for (int id=0; id < maxID+1; id++)
-        //for (int id=maxID; id >=0; --id)
         {
             int l =  _arraySP[id].create_labelSegmentation(seg,numLabels,mode);
             im.setTo(l,_arraySP[id].getMask());
-            //printf("LABEL: %d %s \n",l,val.getLabel(l).c_str());//getchar();
+            //printf("LABEL: %d %s \n",l,val.getLabel(l).c_str());getchar();
         }
         
         //////////////////
@@ -905,7 +928,8 @@ public:
         imshow("leyend",l);*/
         ///////////////////
         //
-        calculateLabelingNeighbours();
+        
+        calculateLabelingNeighbours(seg,numLabels);
         
         //paint
         Mat leyend= Mat::ones(_image.rows,_image.cols, CV_8UC3);
@@ -914,7 +938,7 @@ public:
         return val.paintLabelRandom(seg,numLabels,&leyend);
     }
     
-    void calculateLabelingNeighbours()
+    void calculateLabelingNeighbours(Mat seg,int numLabels)
     {
         clock_t start = clock();
         
@@ -922,22 +946,29 @@ public:
         Mat newLabels = Mat::zeros(_image.rows,_image.cols, CV_8UC1);
         
         for (int id1=0; id1 < maxID+1; id1++)
-        //for (int id1=maxID; id1 >=0; --id1)
         {
             //get neighbour
             set<int> neig = _arraySP[id1].getFirstNeighbours();
-            
             int ln=0;
             
             std::set<int>::iterator it;
+
+            Mat maskN = Mat::zeros(_image.rows,_image.cols, CV_8UC1);
             for (it=neig.begin(); it!=neig.end(); ++it)
             {
                 ln = _arraySP[id1].addHistogramLabelSegmentation(_arraySP[*it].getLabelSegmentation());
                 //printf("id: %d neig: %d l=%d  %d\n",id1,*it,ln,(int)neig.size());//getchar();
+                //concat mask
+                bitwise_or(maskN, _arraySP[*it].getMask(),maskN);
             }
             
             _arraySP[id1].normalizeLabelFirstSegmentation((int)neig.size());
             newLabels.setTo(ln,_arraySP[id1].getMask());
+            
+            //create oriented semantic label segmentation
+            _arraySP[id1].create_labelOriented(seg,numLabels,maskN);
+           //  _arraySP[id1].create_labelOrientedGlobal(seg,numLabels);
+
         }
         
         /*labelSet val(60);

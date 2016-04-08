@@ -50,6 +50,9 @@ int SEMANTIC2_LABELS = 23;
 int SEMANTIC3_LABELS = 22;
 
 int mCONTEXT = 0; // semantic_neigbourg
+int mCONTEXT2 = 0; // oriented semantic_neigbourg
+
+int mGLOBAL = 0; // oriented ALL semantic
 
 bool DEBUG = false;
 
@@ -58,10 +61,13 @@ string DATASET = "svt1";//"ICDAR";
 //caffe
 utilsCaffe *_caffe;
 
+bool USE_PCA = true;
+PCA* pca;
+
 /*int nSAMPLES = 50;
  string nameSVM = "svm_LAB_PEAKS_" + to_string(nSAMPLES) + "_NOTZERO.xml";*/
 
-Mat concatFileDescriptors(int id,Mat desRGB,Mat desLAB,Mat desEDGES,Mat desEDDIR, Mat desCAFFE, Mat desSEMANTIC, Mat desCONTEXT)
+Mat concatFileDescriptors(int id,Mat desRGB,Mat desLAB,Mat desEDGES,Mat desEDDIR, Mat desCAFFE, Mat desSEMANTIC, Mat desCONTEXT,Mat desCONTEXT2, Mat desGLOBAL)
 {
     Mat des;
     
@@ -93,15 +99,6 @@ Mat concatFileDescriptors(int id,Mat desRGB,Mat desLAB,Mat desEDGES,Mat desEDDIR
             des=desEDDIR.row(id);
     }
     
-    
-    if (mCAFFE != 0)
-    {
-        if (des.rows != 0)
-            hconcat(desCAFFE.row(id), des,des);
-        else
-            des=desCAFFE.row(id);
-    }
-    
     if (mSEMANTIC != 0)
     {
         if (des.rows != 0)
@@ -122,17 +119,56 @@ Mat concatFileDescriptors(int id,Mat desRGB,Mat desLAB,Mat desEDGES,Mat desEDDIR
         
     }
     
+    if (mCONTEXT2 != 0)
+    {
+        if (des.rows != 0)
+            hconcat(desCONTEXT2.row(id), des,des);
+        else
+            des=desCONTEXT2.row(id);
+        
+        /*for (int i=0; i<des.cols; i++)
+         printf("CONCAT %f  \n",des.at<float>(0,i));//*/
+        
+    }
+    
+    if (mGLOBAL != 0)
+    {
+        if (des.rows != 0)
+            hconcat(desGLOBAL.row(id), des,des);
+        else
+            des=desGLOBAL.row(id);
+        
+        /*for (int i=0; i<des.cols; i++)
+         printf("CONCAT %f  \n",des.at<float>(0,i));//*/
+        
+    }
+    
+    if (mCAFFE != 0)
+    {
+        if (des.rows != 0)
+            hconcat(desCAFFE.row(id), des,des);
+        else
+            des=desCAFFE.row(id);
+    }
+    
     return des;
 }
-
 
 
 //train SVM
 void descriptors2file(FILE *fout, float fid, Mat desID, float acc);
 
 bool file2descriptors(string file, int size, Mat *descriptors, Mat *accText);
-bool descriptorFileText(string path,string img,int numID,Mat *desRGB,Mat *desLAB,Mat *desEDGES,Mat *desEDDIR, Mat *desCAFFE, Mat *desSEMANTIC, Mat *desCONTEXT,Mat *accText);
+bool descriptorFileText(string path,string img,int numID,
+                        Mat *desRGB,Mat *desLAB,
+                        Mat *desEDGES,Mat *desEDDIR,
+                        Mat *desCAFFE,
+                        Mat *desSEMANTIC,
+                        Mat *desCONTEXT,Mat *desCONTEXT2, Mat *desGLOBAL,
+                        Mat *accText);
+
 void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges, string nameEdgesDIR, string nameSegmen);
+
 void calculateSUPERPIXELSdescriptors(SuperPixels *SPCTE, string nameEdges, string nameEdgesDIR, string nameSegmen, Mat *descriptors, Mat *accText, string path, string img);
 
 Mat descriptorText(SuperPixels *SPCTE, int id, string nameEdges = "", string nameEdgesDIR="", string nameSegmen = "");
@@ -237,7 +273,196 @@ Mat loadMatFromYML(string  file, string  variable)
     return  A;
 }
 
-void cmpImage(string image, string gt, float* precision, float *recall)
+void cmpImageTXT(string gtTXT, string image, float* precisionBB, float *recallBB)
+{
+    //open file TXT
+    
+    Mat img = imread(image,CV_LOAD_IMAGE_COLOR);
+    // imshow("image",img);
+    vector<Mat> bgr;
+    split(img,bgr);
+    
+    Mat mask=(bgr[0] == 0);
+    Mat resul=(bgr[1] == 0);
+    
+    bitwise_and(mask, resul, resul);
+    mask = (bgr[2] == 255);
+    bitwise_and(resul, mask, resul);
+    //imshow("resul",resul);
+    
+    vector<vector<Point> > contours;
+    vector<Vec4i> hierarchy;
+    
+    findContours( resul, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
+    
+    //int totalDet = contours.size();
+    int numGT = 0;
+    //int numDet = 0;
+
+    /*RNG rng(12345);
+    /// Draw contours
+    Mat detected = Mat::zeros( resul.size(), CV_8UC3 );
+    for( int i = 0; i< contours.size(); i++ )
+    {
+        Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+        //drawContours( detected, contours, i, Scalar(255,255,255), CV_FILLED, 8, hierarchy, 1, Point() );
+        drawContours( detected, contours, i, color, CV_FILLED, 8, hierarchy, 1, Point() );
+    }//*/
+    
+    if (contours.size() == 0)
+    {
+        (*precisionBB)=0;
+        (*recallBB)=0;
+        return;
+    }
+    
+    Mat matrix = Mat::zeros(1,contours.size(),CV_32FC1);
+
+    FILE *fp;
+    
+    if( (fp = fopen(gtTXT.c_str(), "r+")) == NULL)
+    {
+        //printf("No such file\n");
+        exit(1);
+    }
+    
+    int pts[8]={0,0,0,0,0,0,0,0};
+    //Mat gtRGB = Mat::zeros( resul.size(), CV_8UC3 );
+    
+    while (fscanf(fp,"%d,%d,%d,%d,%d,%d,%d,%d,%*[^\n]",&pts[0], &pts[1], &pts[2], &pts[3],
+                  &pts[4], &pts[5], &pts[6], &pts[7]) != EOF)//!feof(fp) )
+    {
+        
+        Mat fila = Mat::zeros(1,contours.size(),CV_32FC1);
+        Mat gt = Mat::zeros(img.rows,img.cols,CV_8UC1);
+        
+        Point points[1][4];
+        points[0][0] = Point(pts[0],pts[1]);
+        points[0][1] = Point(pts[2],pts[3]);
+        points[0][2] = Point(pts[4],pts[5]);
+        points[0][3] = Point(pts[6],pts[7]);
+        
+        const Point* ppt[1] = { points[0] };
+        int npt[] = { 4 };
+        fillPoly( gt,
+                 ppt,
+                 npt,
+                 1,
+                 Scalar( 255, 255, 255 ),
+                 CV_AA );
+        
+        /*fillPoly( gtRGB,
+                 ppt,
+                 npt,
+                 1,
+                 Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) ),
+                 CV_AA );*/
+        
+        numGT = numGT + 1;
+        
+        //printf("\n numGT %d:  ",numGT);
+        
+        for( int i = 0; i< contours.size(); i++ )
+        {
+            Mat detected = Mat::zeros( resul.size(), CV_8UC3 );
+            drawContours( detected, contours, i, Scalar(255,255,255), CV_FILLED, 8, hierarchy, 1, Point() );
+            cvtColor(detected,detected,CV_BGR2GRAY);
+            //imshow( "Detected", detected );waitKey(0);
+            Mat inter,uni;
+            bitwise_and(gt,detected,inter);
+            //bitwise_or(gt,detected,uni);
+            
+            fila.at<float>(0,i) = float(countNonZero(inter))/float(countNonZero(gt));
+        }
+        
+        if (numGT == 1)
+            matrix = fila.clone();
+        else
+            vconcat(matrix, fila, matrix);
+        
+        //imshow( "GT RBG", gtRGB); waitKey(0);
+       
+       /* Mat intersection =
+        
+        Mat imgTP;
+        bitwise_and(gt,resul,imgTP);
+        
+        printf("size: %d AND: %d  area_overlap: %0.2f\n",countNonZero(gt),countNonZero(imgTP),float(countNonZero(imgTP))/(float)countNonZero(gt)*100.0);
+        imshow("imgTP",imgTP);
+        imshow("boundingbox",gt); waitKey(0);
+        */
+        
+    }
+    
+    //printf("\n\nnumGT: %d numDet: %d P_bb: %f R_bb: %f \n\n",numGT,numDet,(float)numDet/(float)contours.size(),(float)numDet/(float)numGT);
+    
+   /* printf("GT\t|");
+    for(int c=0; c < matrix.cols; c++)
+    {
+        printf("\tbb %d",c);
+    }
+    printf("\n----------------------------\n");*/
+    
+    Mat sumF = Mat::zeros( numGT, 1,CV_32FC1 );
+    Mat sumC = Mat::zeros( 1, contours.size(),CV_32FC1 );
+    
+    for(int f=0; f < matrix.rows; f++)
+    {
+        float sum =0;
+        for(int c=0; c < matrix.cols; c++)
+            sum += matrix.at<float>(f,c);
+        
+        sumF.at<float>(f) = sum;
+    }
+    
+    for(int c=0; c < matrix.cols; c++)
+    {
+        float sum =0;
+        for(int f=0; f < matrix.rows; f++)
+            sum += matrix.at<float>(f,c);
+        
+        sumC.at<float>(c) = sum;
+    }
+    
+    
+    
+   /* for(int f=0; f < matrix.rows; f++)
+    {
+        printf("%d\t|",f);
+        
+        for(int c=0; c < matrix.cols; c++)
+        {
+            printf("\t%0.2f",matrix.at<float>(f,c));
+        }
+        
+        //printf("\t|\t%0.2f",sumF.at<float>(f));
+        
+        printf("\n");
+    }
+    
+    printf("\n----------------------------\n");*/
+    /*printf("\t|");
+    for(int c=0; c < matrix.cols; c++)
+    {
+        printf("\t%0.2f",sumC.at<float>(c));
+    }//*/
+    
+    int det = countNonZero((sumC > 0.5));
+    int TP = countNonZero((sumF > 0.5));
+    
+    // printf("\ndet: %d TP: %d P_bb: %f R_bb: %f \n\n",det,TP,(float)det/(float)contours.size(),(float)TP/(float)numGT);
+
+    (*precisionBB)=(float)det/(float)contours.size();
+    (*recallBB)=(float)TP/(float)numGT;
+    
+    //imshow("show",gt);waitKey(0);
+   
+    fclose (fp);
+    
+    
+}
+
+float cmpImage(string image, string gt, float* precision, float *recall)
 {
     Mat img = imread(image,CV_LOAD_IMAGE_COLOR);
     // imshow("image",img);
@@ -252,12 +477,15 @@ void cmpImage(string image, string gt, float* precision, float *recall)
     bitwise_and(resul, mask, resul);
     
     
-    //imshow("out",resul);
+    //imshow("out",resul);waitKey(0);
     
     Mat imgGT = imread(gt,CV_LOAD_IMAGE_GRAYSCALE);
     //imshow("gt",imgGT);
     
     Mat imgTP,imgFP,imgFN;
+    
+    if (imgGT.rows != resul.rows || imgGT.cols != resul.rows)
+       resize(imgGT, imgGT, resul.size());
     
     bitwise_and(imgGT,resul,imgTP);
     //imshow("imgTP",imgTP);
@@ -279,11 +507,12 @@ void cmpImage(string image, string gt, float* precision, float *recall)
     (*precision) = (float)tp / (float)tpfp;
     (*recall) = (float)tp / (float)tpfn ;
     
+    return countNonZero(resul)*100.0/float(resul.cols*resul.rows);
     //printf("P:%f R:%f \n",(*precision),(*recall));
 
 }
 
-void parseTXT(string name, string out)
+void parseTXT(string name, string out, string dir_gt,string dir_out)
 {
     FILE *fout;
     
@@ -307,8 +536,8 @@ void parseTXT(string name, string out)
     string title;
    
    // printf("CAFFE                                   85.177254           30.040001\n");
-    fprintf(fout,"              OPTIONS                      time             percentage          precision             recall             image\n");
-    fprintf(fout,"---------------------------------------------------------------------------------------------------------------------------------\n");
+    fprintf(fout,"              OPTIONS                      time             percentage          precision             recall          precisionBB           recallBB            image\n");
+    fprintf(fout,"------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
     
     while(inFile.good())
     {
@@ -349,14 +578,20 @@ void parseTXT(string name, string out)
             pos2=line3.find(".");
             string file = line3.substr(pos1,(pos2-pos1));
             
-            float precision;
-            float recall;
-            string resul = "/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/" + string(imgFile);
-            string gt = "/Users/acambra/TESIS/datasets/svt1/train/gt/gt_" + file + ".png";
-            cmpImage(resul, gt, &precision, &recall);
+            float precision,precisionBB;
+            float recall,recallBB;
+            //string resul = "/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/" + string(imgFile);
+            string resul = dir_out + string(imgFile);
+            //string gt = "/Users/acambra/TESIS/datasets/svt1/train/gt/gt_" + file + ".png";
+            string gt = dir_gt + file + ".png";
+            percentage = cmpImage(resul, gt, &precision, &recall);
+            
+            //string gtTXT = "/Users/acambra/TESIS/datasets/svt1/train/gt/gt_" + file + ".txt";
+            string gtTXT = dir_gt + file + ".txt";
+            cmpImageTXT(gtTXT,resul, &precisionBB, &recallBB);
             
             
-            fprintf(fout,"%-40s%-20f%-20f%-20f%-20f%-20s\n",line2,time,percentage,precision,recall,file.c_str());//getchar();
+            fprintf(fout,"%-40s%-20f%-20f%-20f%-20f%-20f%-20f%-20s\n",line2,time,percentage,precision,recall,precisionBB,recallBB,file.c_str());//getchar();
             
             // getline(inFile,line2);
             //
@@ -366,6 +601,11 @@ void parseTXT(string name, string out)
     fclose(fout);
 }
 
+/********************************************************************************************************************************
+ 
+    MAIN
+ 
+ ********************************************************************************************************************************/
 
 int main(int argc, const char * argv[]) {
     
@@ -376,13 +616,17 @@ int main(int argc, const char * argv[]) {
    
     //tp pn nn np
     
-    /*cmpImage("/Users/acambra/TESIS/CODE/GibHub_test_superpixels/build/Debug/ICDAR/test/out/img_1000.jpg_CAFFE_500.png",
-             "/Users/acambra/TESIS/CODE/GibHub_test_superpixels/build/Debug/ICDAR/test/gt/gt_img_1000.png");//*/
+    /*float precision, recall;
+    cmpImageTXT("/Users/acambra/TESIS/datasets/svt1/train/gt/gt_img_3.txt",
+                "/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/out/img_3.jpg_CAFFE_SEMANTIC_570.png",
+                &precision,&recall);
     
+    return 0;//*/
     
-    
-    parseTXT("/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/stdout_svt1_RBF3_570_TEST.txt",
-             "/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/resul_svt1_RBF3_570_TEST.txt");
+    parseTXT("/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/stdout_svt1_RBF_570_response1_test_table.txt",
+             "/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/resul_svt1_RBF_570_response1_test_table.txt",
+             "/Users/acambra/TESIS/datasets/svt1/test/gt/gt_",
+             "");
     return 1;//*/
     
     //parse argv
@@ -400,7 +644,7 @@ int main(int argc, const char * argv[]) {
     ("semantic", boost::program_options::value<std::string>(), "path image semantic segmentation")
     ("numLabels", boost::program_options::value<int>()->default_value(2), "num labels")
     ("svmTrain",boost::program_options::value<std::string>()->default_value("")->implicit_value(""),"train svm")
-    ("svmTestDIR", boost::program_options::value<std::string>(), "dir images test")
+    ("dirout", boost::program_options::value<std::string>(), "dir images out")
     ("nSamples", boost::program_options::value<int>()->required(), "test svm")
     ("help", "produce help message");
     
@@ -466,8 +710,15 @@ int main(int argc, const char * argv[]) {
         mSEMANTIC = 1;
     }
     
-    if (parameters["svmOptions"].as<std::string>().find("CONTEXT") != std::string::npos)
+    if (parameters["svmOptions"].as<std::string>().find("CONTEXT2") != std::string::npos)
+        mCONTEXT2 = 1;
+    else if (parameters["svmOptions"].as<std::string>().find("CONTEXT") != std::string::npos)
         mCONTEXT = 1;
+    
+    if (parameters["svmOptions"].as<std::string>().find("GLOBAL") != std::string::npos)
+    {
+        mGLOBAL = 1;
+    }
     
     string svmType="";
      if (parameters["svmTrain"].as<std::string>().length() > 0)
@@ -505,11 +756,11 @@ int main(int argc, const char * argv[]) {
             {
                 mCAFFE = 1;
                 //initCaffe
-                string model = "/Users/acambra/Dropbox/test_caffe/bvlc_reference_caffenet.caffemodel";
+                /*string model = "/Users/acambra/Dropbox/test_caffe/bvlc_reference_caffenet.caffemodel";
                 string proto = "/Users/acambra/Dropbox/test_caffe/deploy.prototxt" ;
                 //printf("Model CAFFE: %s PROTO: %s\n",model.c_str(),proto.c_str());getchar();
                 
-                _caffe = new utilsCaffe(model,proto);
+                _caffe = new utilsCaffe(model,proto);*/
             }
             
             string path = "/Users/acambra/TESIS/datasets/";// "/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/";
@@ -553,6 +804,17 @@ int main(int argc, const char * argv[]) {
    // if (parameters.find("svmTest") != parameters.end() && parameters["svmTest"].as<std::string>().length() > 0) {
     if (parameters.count("svmTest")) {
         
+        string dir_out="";
+        
+        if (parameters.find("dirout") != parameters.end())
+        {
+            dir_out = parameters["dirout"].as<std::string>();
+        }
+        else
+        {
+            return -1;
+        }
+        
         CvSVM SVM;
         SVM.load(nameSVM2.c_str());
         
@@ -566,7 +828,7 @@ int main(int argc, const char * argv[]) {
         string nameGT="";
        
         string nameSegmen ="";
-        if (mSEMANTIC == 1 || mCONTEXT == 1)
+        if (mSEMANTIC == 1 || mCONTEXT == 1 || mCONTEXT2 == 1 || mGLOBAL)
             nameSegmen = parameters["semantic"].as<std::string>();
         
         SuperPixels *SPCTE;
@@ -574,6 +836,7 @@ int main(int argc, const char * argv[]) {
         SPCTE= svmSuperpixelsTEXT(nameImage,2,nameGT,nameSegmen);
         
         Mat imgSP = SPCTE->getImage();//Superpixels().clone();
+        Mat imgSP_2 = SPCTE->getImage();
         /*imshow("superpixels",SPCTE->getImageSuperpixels());
          waitKey(0);//*/
         
@@ -605,7 +868,7 @@ int main(int argc, const char * argv[]) {
         }
         
         //READ????
-        Mat desRGB,desLAB,desEDGES,desEDDIR,desCAFFE,desSEMANTIC,desCONTEXT,accText;
+        Mat desRGB,desLAB,desEDGES,desEDDIR,desCAFFE,desSEMANTIC,desCONTEXT,desCONTEXT2,desGLOBAL,accText;
         int num = SPCTE->maxID+1;
         string file = nameImage.substr((int)nameImage.find_last_of("/")+1);
         
@@ -613,7 +876,7 @@ int main(int argc, const char * argv[]) {
         dir_des=dir_des.substr(0,(int)dir_des.find_last_of("/"))+ "/descriptors/";
         
        // desSEMANTIC = Mat::zeros(num,2*(SEMANTIC_LABELS),CV_32FC1);*/
-        bool readDescriptor = descriptorFileText(dir_des,file, num,&desRGB,&desLAB,&desEDGES,&desEDDIR,&desCAFFE,&desSEMANTIC,&desCONTEXT,&accText);
+        bool readDescriptor = descriptorFileText(dir_des,file, num,&desRGB,&desLAB,&desEDGES,&desEDDIR,&desCAFFE,&desSEMANTIC,&desCONTEXT,&desCONTEXT2,&desGLOBAL,&accText);
         
         string nameEdges="";
         if (parameters.find("edges") != parameters.end())
@@ -680,38 +943,71 @@ int main(int argc, const char * argv[]) {
             //Mat desID = descriptorText(SPCTE, id, nameEdges, nameEdgesDIR, nameSegmen);
             
             if (readDescriptor)
-                desID =  concatFileDescriptors(id,desRGB,desLAB,desEDGES, desEDDIR,  desCAFFE,  desSEMANTIC, desCONTEXT);//desSEMANTIC.row(id);
-           // desF =  concatFileDescriptors(id,desRGB,desLAB,desEDGES, desEDDIR,  desCAFFE,  desSEMANTIC, desCONTEXT).clone();
+                desID =  concatFileDescriptors(id,desRGB,desLAB,desEDGES, desEDDIR,  desCAFFE,  desSEMANTIC, desCONTEXT,desCONTEXT2,desGLOBAL);//desSEMANTIC.row(id);
+            //desF =  concatFileDescriptors(id,desRGB,desLAB,desEDGES, desEDDIR,  desCAFFE,  desSEMANTIC, desCONTEXT,desCONTEXT2).clone();
 
             else
-                desID = descriptorText(SPCTE, id, nameEdges, nameEdgesDIR, nameSegmen);
+             desID = descriptorText(SPCTE, id, nameEdges, nameEdgesDIR, nameSegmen);
 
             
            /*for (int i=0; i<desID.cols; i++)
-                printf("id %d calculado: %f leido: %f  \n",id,desID.at<float>(0,i),desF.at<float>(0,i));//*/
+                if (desID.at<float>(0,i) != desF.at<float>(0,i))
+                    printf("id %d calculado: %f leido: %f  \n",id,desID.at<float>(0,i),desF.at<float>(0,i));//*/
             //
             
             //evaluate SVM
             //float threshold = 0.5;
             if (SVM.get_var_count() != 0)
             {
-                float response = SVM.predict(desID);
-                printf("RESPONSE SVM id: %d  %f\n",id,response);
-                //paint image with SVM response
-                if (response == (LABEL_TEXT))
+                
+               /* if (USE_PCA)
                 {
-                    response = SVM.predict(desID,true);//distance
-                    imgSP = SPCTE->paintSuperpixel(imgSP, id).clone();
+                    Mat projectedMat = pca->project(desID.row(0));
                     
-                    numText += SPCTE->numPixels(id);
-                    if (DEBUG) printf("\t*** SVM response id: %d  TEXT (%f)\n",id,response);
+                    float responsePCA = SVM.predict(projectedMat);
+
+                   
+                    if (responsePCA == (LABEL_TEXT))
+                    {
+                         printf("PCA SVM id: %d  %f TEXT\n",id,responsePCA);
+                        imgSP = SPCTE->paintSuperpixel(imgSP, id, new Scalar(0,255,0)).clone();
+                    }
+                    else
+                         printf("PCA SVM id: %d  %f NO\n",id,responsePCA);
+                        
                 }
-                else
-                {
-                    response = SVM.predict(desID,true); //distance
-                    if (DEBUG) printf("\t*** SVM response id: %d  NO TEXT (%f)\n",id,response);
-                    numNOText += SPCTE->numPixels(id);
-                }
+                else{*/
+                    
+                    
+                    float response = SVM.predict(desID);
+                    printf("RESPONSE SVM id: %d  %f\n",id,response);
+                    //paint image with SVM response
+                    if (response == (LABEL_TEXT))
+                    {
+                        response = SVM.predict(desID,true);//distance
+                        imgSP = SPCTE->paintSuperpixel(imgSP, id).clone();
+                        //imgSP_2 = SPCTE->paintSuperpixel(imgSP_2, id,new Scalar(0,255,0)).clone();
+                        
+                        numText += SPCTE->numPixels(id);
+                        if (DEBUG) printf("\t*** SVM response id: %d  TEXT (%f)\n",id,response);
+                    }
+                    else
+                    {
+                        response = SVM.predict(desID,true); //distance
+                        /*if (response <= 0.75)
+                        {
+                        //    imgSP_2 = SPCTE->paintSuperpixel(imgSP_2, id, new Scalar(0,255,0)).clone();
+                            imgSP = SPCTE->paintSuperpixel(imgSP, id).clone();
+                        /*    if (DEBUG) printf("\t*** SVM response id: %d  TEXT????? (%f)\n",id,response);
+                        }
+                        else
+                        {*/
+                            numNOText += SPCTE->numPixels(id);
+                            if (DEBUG) printf("\t*** SVM response id: %d  NO TEXT (%f)\n",id,response);
+                        //}
+                            
+                    }
+               // }
             }
             else
             {
@@ -738,8 +1034,6 @@ int main(int argc, const char * argv[]) {
                  ,mEDGES,NBINS_EDGES,modeEDGES,imgEdges\
                  ,mCAFFE,CAFFE_LAYER,NUMCAFFE\
                  ,mSEMANTIC,SEMANTIC_LABELS).clone();*/
-                
-                
                 
                 //evaluate
                 /* float response = SVM.predict(desID);//,true);
@@ -777,11 +1071,13 @@ int main(int argc, const char * argv[]) {
                100.0 * (float)numText / (float)(SPCTE->getImage().rows*SPCTE->getImage().cols));
         
         if (DEBUG == 1){
-            imshow(nameSVM,imgSP);waitKey(0);}
+            imshow(nameSVM,imgSP);
+           // imshow("0.5 distance from border SVM",imgSP_2);
+            waitKey(0);}
         else{
             
             size_t found1 = nameImage.find_last_of("/");
-            string name = "out/"+ nameImage.substr(found1+1) + "_" + parameters["svmOptions"].as<std::string>()+ "_" + to_string(nSAMPLES)+ svmType +".png";
+            string name = dir_out + "out/"+ nameImage.substr(found1+1) + "_" + parameters["svmOptions"].as<std::string>()+ "_" + to_string(nSAMPLES)+ svmType +".png";
             imwrite(name,imgSP);
             printf("\n\t* SVM solution saved: %s\n",name.c_str());
         }
@@ -792,15 +1088,16 @@ int main(int argc, const char * argv[]) {
         printf("===================================================================\n");
         
     }//svmTest
-    
-    
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 //TRAIN SVM
 //change!!!!!!
-bool descriptorFileText(string path, string img,int numID, Mat *desRGB,Mat *desLAB,Mat *desEDGES,Mat *desEDDIR, Mat *desCAFFE, Mat *desSEMANTIC, Mat *desCONTEXT, Mat *accText)
+bool descriptorFileText(string path, string img,int numID,
+                        Mat *desRGB,Mat *desLAB,Mat *desEDGES,Mat *desEDDIR, Mat *desCAFFE, Mat *desSEMANTIC,
+                        Mat *desCONTEXT,Mat *desCONTEXT2, Mat *desGLOBAL,
+                        Mat *accText)
 {
     //check Files
     img = path + "/"+ img;
@@ -812,6 +1109,8 @@ bool descriptorFileText(string path, string img,int numID, Mat *desRGB,Mat *desL
     string fCAFFE = img + "_CAFFE" + ".bin";
     string fSEMANTIC = img + "_SEMANTIC" + ".bin";
     string fCONTEXT = img + "_CONTEXT" + ".bin";
+    string fCONTEXT2 = img + "_CONTEXT2" + ".bin";
+    string fGLOBAL = img + "_GLOBAL" + ".bin";
     
    // FILE* frgb,*flab,*fedges,*feddir,*fcaffe,*fsemantic;
     
@@ -874,6 +1173,24 @@ bool descriptorFileText(string path, string img,int numID, Mat *desRGB,Mat *desL
             printf("CONTEXT %f  \n",desCONTEXT->at<float>(0,i));//*/
     }
     
+    if (mCONTEXT2 == 1 && ok)
+    {
+        numDES = (4*SEMANTIC_LABELS);
+        (*desCONTEXT2) = Mat::zeros(numID,numDES,CV_32FC1);
+        ok = ok && file2descriptors(fCONTEXT2,numDES,desCONTEXT2,accText);
+        /*for (int i=0; i<desCONTEXT->cols; i++)
+         printf("CONTEXT %f  \n",desCONTEXT->at<float>(0,i));//*/
+    }
+    
+    if (mGLOBAL == 1 && ok)
+    {
+        numDES = (4*SEMANTIC_LABELS);
+        (*desGLOBAL) = Mat::zeros(numID,numDES,CV_32FC1);
+        ok = ok && file2descriptors(fGLOBAL,numDES,desGLOBAL,accText);
+        /*for (int i=0; i<desCONTEXT->cols; i++)
+         printf("CONTEXT %f  \n",desCONTEXT->at<float>(0,i));//*/
+    }
+    
     return ok;//desSEMANTIC->row(id).clone();
 }
 
@@ -906,7 +1223,13 @@ Mat descriptorText(SuperPixels *SPCTE, int id, string nameEdges,string nameEdges
             info += "SEMANTIC";
         
         if (mCONTEXT != 0)
-            info += "CONTEXT";
+            info += "CONTEXT ";
+        
+        if (mCONTEXT2 != 0)
+            info += "CONTEXT2 ";
+        
+        if (mGLOBAL != 0)
+            info += "GLOBAL ";
         
         printf("descriptors: %s id %d/%d \n",info.c_str(),id,SPCTE->maxID);
     }
@@ -960,7 +1283,9 @@ Mat descriptorText(SuperPixels *SPCTE, int id, string nameEdges,string nameEdges
                                           ,mEDDIR,NBINS_EDDIR,imgEdgesDIR\
                                           ,0,CAFFE_LAYER,NUMCAFFE\
                                           ,mSEMANTIC,SEMANTIC_LABELS \
-                                          ,mCONTEXT,SEMANTIC_LABELS).clone();
+                                          ,mCONTEXT,SEMANTIC_LABELS \
+                                          ,mCONTEXT2,SEMANTIC_LABELS \
+                                          ,mGLOBAL,SEMANTIC_LABELS).clone();
     //caffe
     
     if (mCAFFE == 1)
@@ -1016,6 +1341,13 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
     
     if (! infile.good()) //si los datos de training no existen, los calculo
     {
+        string model = "/Users/acambra/Dropbox/test_caffe/bvlc_reference_caffenet.caffemodel";
+        string proto = "/Users/acambra/Dropbox/test_caffe/deploy.prototxt" ;
+        //printf("Model CAFFE: %s PROTO: %s\n",model.c_str(),proto.c_str());getchar();
+        
+        _caffe = new utilsCaffe(model,proto);
+        
+        
         //SVM
         int numDES = 0;
         
@@ -1026,7 +1358,9 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
         if (mEDDIR == 1)    numDES += NBINS_EDDIR;
         if (mCAFFE == 1)    numDES += NUMCAFFE;
         if (mSEMANTIC == 1) numDES += (SEMANTIC_LABELS);
-        if (mCONTEXT == 1) numDES += (SEMANTIC_LABELS);
+        if (mCONTEXT == 1)  numDES += (SEMANTIC_LABELS);
+        if (mCONTEXT2 == 1) numDES += (4*SEMANTIC_LABELS);
+        if (mGLOBAL == 1)   numDES += (4*SEMANTIC_LABELS);
         
         int NEGIMG,NEGSAMPLES;
         float ACC_THRESHOLD;
@@ -1140,7 +1474,7 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
                     
                     //string SEMANTIC
                     string nameSegmen = "";
-                    if (mSEMANTIC == 1 || mCONTEXT == 1)
+                    if (mSEMANTIC == 1 || mCONTEXT == 1 || mCONTEXT2 == 1 || mGLOBAL == 1)
                     {
                         nameSegmen = dir_segmen + "/" + i->path().filename().string();
                         nameSegmen = nameSegmen.substr(0, nameSegmen.find_last_of(".")) + "_SegNet.png";
@@ -1208,9 +1542,9 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
                                 sampleN--;
                                 printf("- %d %f\n",neg,accT);
                                 
-                                /*string nneg = "/Users/acambra/TESIS/CODE/GibHub_test_superpixels/build/Debug/neg/" + i->path().filename().string() + to_string(id) + ".png";
+                               /* string nneg = "/Users/acambra/TESIS/datasets/svt1/train/neg/" + i->path().filename().string() + to_string(id) + ".png";
                                  imwrite(nneg,SPCTE->cropSuperpixel(SPCTE->getImageSuperpixels(),id,3));
-                                 }*/
+                                 //*/
                                 
                             }
                         }//for SPTCTE//*/
@@ -1235,7 +1569,6 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
         fs.release();
         
     }
-    
     else
     {
         printf("\n\t* Load training,labels files: %s\n\n", filename.c_str());
@@ -1260,7 +1593,7 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
         params.term_crit   =     TermCriteria(CV_TERMCRIT_ITER+CV_TERMCRIT_EPS, (int)1e8, (double)1e-6);
         params.gamma = 0.001;
     }
-    else if (nameSVM.find("RBF") != std::string::npos)
+    else if ((nameSVM.find("RBF") != std::string::npos) || (nameSVM.find("AUTO") != std::string::npos))
     {
         params.svm_type    = CvSVM::C_SVC;
         params.kernel_type = CvSVM::RBF;
@@ -1282,14 +1615,57 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
         params.term_crit   =     TermCriteria(CV_TERMCRIT_ITER+CV_TERMCRIT_EPS, (int)1e8, (double)1e-6);
     }
     
-    // Train the SVM
-    CvSVM SVM;
-    
     clock_t startTrain = clock();
-  
-    SVM.train(trainingData, labels, Mat(), Mat(), params);
-    SVM.save(nameSVM.c_str());
-    SVM.clear();
+   
+    if (nameSVM.find("PCA") != std::string::npos)
+    {
+        USE_PCA = true;
+        //PCA*
+        pca = new PCA(trainingData, // pass the data
+                      Mat(), // we do not have a pre-computed mean vector,
+                      CV_PCA_DATA_AS_ROW,
+                      4000);
+        
+        Mat pcadata(trainingData.rows, 4000,CV_32FC1);
+        
+        for(int i=0; i<trainingData.rows; i++) {
+            
+            //cout << endl << "T: " << trainingData.row(i) << endl;
+            
+            Mat projectedMat = pca->project(trainingData.row(i));
+            
+            //cout << "PCA: " << projectedMat << endl;
+            
+            //Mat recons= pca->backProject(projectedMat);
+            
+            pcadata.row(i) = projectedMat.row(0);
+        }
+        
+        CvSVM SVM;
+        SVM.train(pcadata, labels, Mat(), Mat(), params);
+        SVM.save(nameSVM.c_str());
+        SVM.clear();
+    
+        
+    }
+    else{
+        
+        // Train the SVM
+        CvSVM SVM;
+        
+        
+        
+        if ((nameSVM.find("AUTO") != std::string::npos))
+        {
+            SVM.train_auto(trainingData, labels, Mat(), Mat(), params);
+        }
+        else
+        {
+            SVM.train(trainingData, labels, Mat(), Mat(), params);
+        }
+        SVM.save(nameSVM.c_str());
+        SVM.clear();
+    }
     
     printf("\n===================================================================\n");
     printf("**** \tTRAIN %0.3f TOTAL %0.3f seconds\n",
@@ -1309,11 +1685,11 @@ void calculateSUPERPIXELSdescriptors(SuperPixels *SPCTE, string nameEdges, strin
 {
 
     //READ????
-    Mat desRGB,desLAB,desEDGES,desEDDIR,desCAFFE,desSEMANTIC, desCONTEXT;
+    Mat desRGB,desLAB,desEDGES,desEDDIR,desCAFFE,desSEMANTIC, desCONTEXT, desCONTEXT2, desGLOBAL;
     int num = SPCTE->maxID+1;
     
     // desSEMANTIC = Mat::zeros(num,2*(SEMANTIC_LABELS),CV_32FC1);*/
-    bool readDescriptor = descriptorFileText(path,img, num,&desRGB,&desLAB,&desEDGES,&desEDDIR,&desCAFFE,&desSEMANTIC,&desCONTEXT,accText);
+    bool readDescriptor = descriptorFileText(path,img, num,&desRGB,&desLAB,&desEDGES,&desEDDIR,&desCAFFE,&desSEMANTIC,&desCONTEXT,&desCONTEXT2,&desGLOBAL,accText);
     
     //for each id in the image
     for (int id=0; (id < SPCTE->maxID+1) ; id++)
@@ -1323,7 +1699,7 @@ void calculateSUPERPIXELSdescriptors(SuperPixels *SPCTE, string nameEdges, strin
         Mat desID;
         
         if (readDescriptor)
-            desID =  concatFileDescriptors(id,desRGB,desLAB,desEDGES, desEDDIR,  desCAFFE,  desSEMANTIC, desCONTEXT);//desSEMANTIC.row(id);
+            desID =  concatFileDescriptors(id,desRGB,desLAB,desEDGES, desEDDIR,  desCAFFE,  desSEMANTIC, desCONTEXT,desCONTEXT2,desGLOBAL);//desSEMANTIC.row(id);
         
         else
             desID = descriptorText(SPCTE, id, nameEdges, nameEdgesDIR, nameSegmen);
@@ -1391,8 +1767,10 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
     string fCAFFE = img + "_CAFFE" + ".bin";
     string fSEMANTIC = img + "_SEMANTIC" + ".bin";
     string fCONTEXT= img + "_CONTEXT" + ".bin";
+    string fCONTEXT2= img + "_CONTEXT2" + ".bin";
+    string fGLOBAL= img + "_GLOBAL" + ".bin";
     
-    FILE* frgb,*flab,*fedges,*feddir,*fcaffe,*fsemantic,*fcontext;
+    FILE* frgb,*flab,*fedges,*feddir,*fcaffe,*fsemantic,*fcontext,*fcontext2,*fglobal;
     
     //EDGES
     Mat imgEdges;//= imread(nameEdges,CV_LOAD_IMAGE_COLOR);
@@ -1446,6 +1824,21 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
         fcontext = fopen(fCONTEXT.c_str(),"wb");
     }
     
+    //CONTEXT2: ID DES ACC
+    ifstream infile7(fCONTEXT2);
+    if (! infile7.good() && mCONTEXT2 == 1)
+    {
+        fcontext2 = fopen(fCONTEXT2.c_str(),"wb");
+    }
+    
+    
+    //CONTEXT2: ID DES ACC
+    ifstream infile8(fGLOBAL);
+    if (! infile8.good() && mGLOBAL == 1)
+    {
+        fglobal = fopen(fGLOBAL.c_str(),"wb");
+    }
+    
     //CAFFE
     ifstream infile6(fCAFFE);
     if (! infile6.good() && mCAFFE == 1)
@@ -1453,14 +1846,12 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
         fcaffe = fopen(fCAFFE.c_str(), "wb");
     }
 
-    //SEMANTIC
-   // Mat imgSegmen  = imread(nameSegmen,CV_LOAD_IMAGE_GRAYSCALE);//COLOR
 
     Mat desID;
     //for each id in the image
     for (int id=0; (id < SPCTE->maxID+1) ; id++)
     {
-       
+        
         float fid= (float) id;
         float acc = SPCTE->_arraySP[id].accLabel(1);
         
@@ -1479,7 +1870,7 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
         }
         
         //RGB: ID DES ACC
-    if (! infile1.good() && mRGB == 1)
+        if (! infile1.good() && mRGB == 1)
         {
             desID = SPCTE->calculateDescriptors(id,SPCTE->getImage() \
                                                 ,0,NBINS_L,NBINS_AB \
@@ -1493,7 +1884,7 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
         }
         
         //EDGES: ID DES ACC
-    if (! infile2.good() && mEDGES == 1)
+        if (! infile2.good() && mEDGES == 1)
         {
             desID = SPCTE->calculateDescriptors(id,SPCTE->getImage() \
                                                 ,0,NBINS_L,NBINS_AB \
@@ -1507,7 +1898,7 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
         }
         
         //EDDIR: ID DES ACC
-    if (! infile3.good() && mEDDIR == 1)
+        if (! infile3.good() && mEDDIR == 1)
         {
             desID = SPCTE->calculateDescriptors(id,SPCTE->getImage() \
                                                 ,0,NBINS_L,NBINS_AB \
@@ -1533,12 +1924,12 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
                                                 ,1,SEMANTIC_LABELS).clone();
             descriptors2file(fsemantic, fid, desID, acc);
             
-           /* for (int i=0; i<desID.cols; i++)
-                printf("id %d escrito: %f \n",id,desID.at<float>(i));//*/
+            /* for (int i=0; i<desID.cols; i++)
+             printf("id %d escrito: %f \n",id,desID.at<float>(i));//*/
         }
         
         //CONTEXT: ID DES ACC
-    if (! infile5.good() && mCONTEXT == 1)
+        if (! infile5.good() && mCONTEXT == 1)
         {
             desID = SPCTE->calculateDescriptors(id,SPCTE->getImage() \
                                                 ,0,NBINS_L,NBINS_AB \
@@ -1552,10 +1943,41 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
             descriptors2file(fcontext, fid, desID, acc);
         }
         
-        //CAFFE
-    if (! infile6.good() && mCAFFE == 1)
+        if (! infile7.good() && mCONTEXT2 == 1)
         {
-           
+            desID = SPCTE->calculateDescriptors(id,SPCTE->getImage() \
+                                                ,0,NBINS_L,NBINS_AB \
+                                                ,0,NBINS_RGB\
+                                                ,0,NBINS_PEAKS \
+                                                ,0,NBINS_EDGES,modeEDGES,imgEdges\
+                                                ,0,NBINS_EDDIR,imgEdgesDIR\
+                                                ,0,CAFFE_LAYER,NUMCAFFE\
+                                                ,0,SEMANTIC_LABELS\
+                                                ,0,SEMANTIC_LABELS\
+                                                ,1,SEMANTIC_LABELS).clone();
+            descriptors2file(fcontext2, fid, desID, acc);
+        }
+        
+        if (! infile8.good() && mGLOBAL == 1)
+        {
+            desID = SPCTE->calculateDescriptors(id,SPCTE->getImage() \
+                                                ,0,NBINS_L,NBINS_AB \
+                                                ,0,NBINS_RGB\
+                                                ,0,NBINS_PEAKS \
+                                                ,0,NBINS_EDGES,modeEDGES,imgEdges\
+                                                ,0,NBINS_EDDIR,imgEdgesDIR\
+                                                ,0,CAFFE_LAYER,NUMCAFFE\
+                                                ,0,SEMANTIC_LABELS\
+                                                ,0,SEMANTIC_LABELS\
+                                                ,0,SEMANTIC_LABELS \
+                                                ,1,SEMANTIC_LABELS).clone();
+            descriptors2file(fglobal, fid, desID, acc);
+        }
+        
+        //CAFFE
+        if (! infile6.good() && mCAFFE == 1)
+        {
+            
             Mat imageSP = SPCTE->cropSuperpixel(SPCTE->getImage(),id,1).clone();
             Mat desCaf= _caffe->features(imageSP, "fc7").clone();
             normalize(desCaf, desCaf);
@@ -1567,21 +1989,24 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
     
     printf("\tSaved descriptors: %s\n",img.c_str());
     
-
+    
     if (! infile.good() && mLAB == 1) fclose(flab);
     
     if (! infile1.good() && mRGB == 1) fclose(frgb);
-
-if (! infile2.good() &&mEDGES == 1) fclose(fedges);
-
-
-if (! infile3.good() &&mEDDIR == 1) fclose(feddir);
-
-if (! infile4.good() && ! infile4.good() && mSEMANTIC == 1) fclose(fsemantic);
-
-if (! infile5.good() && mCONTEXT == 1) fclose(fcontext);
-
-if (! infile6.good() && mCAFFE == 1)  fclose(fcaffe);
+    
+    if (! infile2.good() && mEDGES == 1) fclose(fedges);    
+    
+    if (! infile3.good() && mEDDIR == 1) fclose(feddir);
+    
+    if (! infile4.good() && mSEMANTIC == 1) fclose(fsemantic);
+    
+    if (! infile5.good() && mCONTEXT == 1) fclose(fcontext);
+    
+    if (! infile7.good() && mCONTEXT2 == 1) fclose(fcontext2);
+    
+    if (! infile8.good() && mGLOBAL == 1) fclose(fglobal);
+    
+    if (! infile6.good() && mCAFFE == 1)  fclose(fcaffe);
 
     
 }

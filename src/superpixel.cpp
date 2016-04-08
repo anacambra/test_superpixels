@@ -18,6 +18,8 @@ using namespace std;
 #define MODE_LABEL_MEDIAN 1
 #define MODE_LABEL_NOTZERO 2
 
+#define PI 3.1416
+
 class SuperPixel
 {
     int _id;
@@ -39,6 +41,11 @@ class SuperPixel
     MatND hist_a;
     MatND hist_b;
     
+    //createHistograms: context oriented
+    MatND h_0,h_1,h_2,h_3;
+    MatND hGLOBAL_0,hGLOBAL_1,hGLOBAL_2,hGLOBAL_3;
+    
+    Point centroide;
     
     unsigned char _DEBUG = 0;
     
@@ -59,6 +66,11 @@ public:
         _numPixels = countNonZero(_mask);
         _label = label;
         
+        //calculate centroide
+        Moments m = moments(_mask, true);
+        centroide.x = m.m10/m.m00;
+        centroide.y =  m.m01/m.m00;
+        
     }
     int getId(){ return _id;}
     int getNumPixels(){ return _numPixels;}
@@ -71,68 +83,23 @@ public:
     void normalizeLabelFirstSegmentation(float i)
     {
         _labelFirstSegmentation = _labelFirstSegmentation / (float) i;
-       // labelSet val(60);
-       // printf("\nFIRST Neigbourd segmentation: %d %s\n",maxLabelSegmentation,val.getLabel(maxLabelSegmentation).c_str());
-        for( int h = 0; h < 23; h++ )
+
+       /* for( int h = 0; h < 23; h++ )
         {
             float binVal = _labelFirstSegmentation.at<float>(h);
-           /* if (binVal != 0)
-            {
-               // printf("%d %f\n",h,binVal);
-                //printf("LABEL: %d %s  %f\n",h,val.getLabel(h).c_str(),binVal);
-            }*/
-        }
-        //getchar();
+        }*/
     }
     
     int addHistogramLabelSegmentation(MatND hist)
     {
-       //return label maxima
-       /* printf("NEW HIST\n");
-        for( int h = 0; h < 60; h++ )
-        {
-            float binVal = hist.at<float>(h);
-            if (binVal != 0)printf("%d %f\n",h,binVal);
-        }
-        printf("-----\n");//*/
-        
-
         if (_labelFirstSegmentation.rows == 0)
             _labelFirstSegmentation = hist.clone();
         
-        else{//*/
-           /* printf(" ACTUAL\n");
-            for( int h = 0; h < 60; h++ )
-            {
-                float binVal = _labelFirstSegmentation.at<float>(h);
-                if (binVal != 0)printf("%d %f\n",h,binVal);
-            }
-           // printf("-----\n");//*/
-        
-        /*printf("NEW HIST\n");
-        for( int h = 0; h < 60; h++ )
-        {
-            float binVal = hist.at<float>(h);
-            if (binVal != 0)printf("%d %f\n",h,binVal);
-        }*/
-       
+        else{
         
             MatND dest;
             add(hist,_labelFirstSegmentation,_labelFirstSegmentation);
-
-                        
-            //bitwise_or(_labelNeighbours,hist,_labelNeighbours);
-           // _labelNeighbours = _labelNeighbours + hist;
         }
-        
-        
-        /*for( int h = 0; h < 60; h++ )
-        {
-            float binVal = _labelFirstSegmentation.at<float>(h);
-            //if (binVal != 0)printf("label %s %d %f\n",labels.getLabel(h).c_str(),h,binVal);
-        }//*/
-        
-       // normalize(_labelSegmentation,_labelSegmentation);
         
         //max bin in histogram
         double maxVal=0;
@@ -301,6 +268,154 @@ public:
         return label;
         
     }//create_labelHist
+    
+    void create_labelOriented(Mat seg, int numLabels, Mat maskN)
+    {
+        int show = 0;
+        //centroide sp _id
+       // Moments m = moments(_mask, true);
+        Point p1 = centroide;//(m.m10/m.m00, m.m01/m.m00);
+        
+        Mat index;
+        findNonZero(maskN, index);
+        
+        Mat mask0 = Mat::zeros(seg.rows,seg.cols,CV_8UC1);
+        Mat mask1 = Mat::zeros(seg.rows,seg.cols,CV_8UC1);
+        Mat mask2 = Mat::zeros(seg.rows,seg.cols,CV_8UC1);
+        Mat mask3 = Mat::zeros(seg.rows,seg.cols,CV_8UC1);
+        
+        Mat test;
+        if (show == 1)
+        {
+            cvtColor(maskN,test,CV_GRAY2BGR);
+        }
+        
+        for (int m = 0; m < (int)index.total(); m++ )
+        {
+            Point p2 = index.at<Point>(m);
+            float ang,a,o;
+            
+            a = float(p2.x - p1.x);
+            o = float(p2.y - p1.y);
+            ang = atan2(o,a);
+            
+            
+            if ((-PI/4.0 <= ang && ang <= 0.0) || (0.0 <= ang && ang < PI/4.0))
+            { //0
+                if (show == 1) circle(test, p2, 1, Scalar(255,0,0), -1);
+                mask0.at<uchar>(p2.y,p2.x) = 255;
+            }
+            else if ((-3.0 * PI/4.0 <= ang && ang < - PI/4.0))
+            { //1
+                if (show == 1) circle(test, p2, 1, Scalar(0,255,0), -1);
+                mask1.at<uchar>(p2.y,p2.x) = 255;
+            }
+            else if ((3 *PI/4.0 <= ang && ang <= PI) || (-PI <= ang && ang < -3*PI/4.0))
+            { //2
+                if (show == 1) circle(test, p2, 1, Scalar(0,0,255), -1);
+                mask2.at<uchar>(p2.y,p2.x) = 255;
+            }
+            else if ((PI/4.0 <= ang && ang <= 3.0*PI/4.0))
+            { //3
+                if (show == 1) circle(test, p2, 1, Scalar(0,255,255), -1);
+                mask3.at<uchar>(p2.y,p2.x) = 255;
+            }
+        }
+        
+        int nbins = numLabels; // levels
+        int hsize[] = { nbins }; // just one dimension
+        float range[] = { 0, (const float)(numLabels) };
+        const float *ranges[] = { range };
+        int chnls[] = {0};
+        
+        calcHist(&seg, 1, chnls, mask0, h_0,1,hsize,ranges);
+        calcHist(&seg, 1, chnls, mask1, h_1,1,hsize,ranges);
+        calcHist(&seg, 1, chnls, mask2, h_2,1,hsize,ranges);
+        calcHist(&seg, 1, chnls, mask3, h_3,1,hsize,ranges);
+        
+        if (countNonZero(mask0) > 0) h_0 = h_0 / countNonZero(mask0);
+        if (countNonZero(mask1) > 0) h_1 = h_1 / countNonZero(mask1);
+        if (countNonZero(mask2) > 0)  h_2 = h_2 / countNonZero(mask2);
+        if (countNonZero(mask3) > 0) h_3 = h_3 / countNonZero(mask3);
+        
+        if (show == 1) {imshow("calculateLabelingNeighbours",test);waitKey(0);}
+    
+    }
+    
+    void create_labelOrientedGlobal(Mat seg, int numLabels)
+    {
+        int show = 0;
+        Point p1 = centroide;
+        
+        Mat maskN;
+        bitwise_not(_mask, maskN);
+        Mat index;
+        
+        findNonZero(maskN, index);
+        
+        Mat mask0 = Mat::zeros(seg.rows,seg.cols,CV_8UC1);
+        Mat mask1 = Mat::zeros(seg.rows,seg.cols,CV_8UC1);
+        Mat mask2 = Mat::zeros(seg.rows,seg.cols,CV_8UC1);
+        Mat mask3 = Mat::zeros(seg.rows,seg.cols,CV_8UC1);
+        
+        Mat test;
+        if (show == 1)
+        {
+            cvtColor(maskN,test,CV_GRAY2BGR);
+        }
+        
+        for (int m = 0; m < (int)index.total(); m++ )
+        {
+            Point p2 = index.at<Point>(m);
+            float ang,a,o;
+            
+            a = float(p2.x - p1.x);
+            o = float(p2.y - p1.y);
+            ang = atan2(o,a);
+            
+            
+            if ((-PI/4.0 <= ang && ang <= 0.0) || (0.0 <= ang && ang < PI/4.0))
+            { //0
+                if (show == 1) circle(test, p2, 1, Scalar(255,0,0), -1);
+                mask0.at<uchar>(p2.y,p2.x) = 255;
+            }
+            else if ((-3.0 * PI/4.0 <= ang && ang < - PI/4.0))
+            { //1
+                if (show == 1) circle(test, p2, 1, Scalar(0,255,0), -1);
+                mask1.at<uchar>(p2.y,p2.x) = 255;
+            }
+            else if ((3 *PI/4.0 <= ang && ang <= PI) || (-PI <= ang && ang < -3*PI/4.0))
+            { //2
+                if (show == 1) circle(test, p2, 1, Scalar(0,0,255), -1);
+                mask2.at<uchar>(p2.y,p2.x) = 255;
+            }
+            else if ((PI/4.0 <= ang && ang <= 3.0*PI/4.0))
+            { //3
+                if (show == 1) circle(test, p2, 1, Scalar(0,255,255), -1);
+                mask3.at<uchar>(p2.y,p2.x) = 255;
+            }
+        }
+        
+        int nbins = numLabels; // levels
+        int hsize[] = { nbins }; // just one dimension
+        float range[] = { 0, (const float)(numLabels) };
+        const float *ranges[] = { range };
+        int chnls[] = {0};
+        
+        calcHist(&seg, 1, chnls, mask0, hGLOBAL_0,1,hsize,ranges);
+        calcHist(&seg, 1, chnls, mask1, hGLOBAL_1,1,hsize,ranges);
+        calcHist(&seg, 1, chnls, mask2, hGLOBAL_2,1,hsize,ranges);
+        calcHist(&seg, 1, chnls, mask3, hGLOBAL_3,1,hsize,ranges);
+        
+        if (countNonZero(mask0) > 0) hGLOBAL_0 = hGLOBAL_0 / countNonZero(mask0);
+        if (countNonZero(mask1) > 0) hGLOBAL_1 = hGLOBAL_1 / countNonZero(mask1);
+        if (countNonZero(mask2) > 0)  hGLOBAL_2 = hGLOBAL_2 / countNonZero(mask2);
+        if (countNonZero(mask3) > 0) hGLOBAL_3 = hGLOBAL_3 / countNonZero(mask3);
+        
+        if (show == 1) {imshow("calculateLabelingNeighbours",test);waitKey(0);}
+        
+    }
+
     
     /***************/
     //DESCRIPTORS
@@ -699,6 +814,76 @@ public:
         
         return descriptor;
     }
+    
+    Mat descriptorsCONTEXT_ORIENTED(int SEMANTIC_LABELS = 60)
+    {
+        
+        Mat descriptor = Mat::zeros(1, (SEMANTIC_LABELS*4), CV_32FC1);
+
+        //0
+        for( int h = 0; h < (SEMANTIC_LABELS); h++ )
+        {
+            float binVal = h_0.at<float>(h);
+            descriptor.at<float>(0,h)=binVal;
+        }
+        //1
+        for( int h = 0; h < (SEMANTIC_LABELS); h++ )
+        {
+            float binVal = h_1.at<float>(h);
+            descriptor.at<float>(0,SEMANTIC_LABELS + h)=binVal;
+        }
+        //2
+        for( int h = 0; h < (SEMANTIC_LABELS); h++ )
+        {
+            float binVal = h_2.at<float>(h);
+            descriptor.at<float>(0,(2*SEMANTIC_LABELS) + h)=binVal;
+        }
+        //3
+        for( int h = 0; h < (SEMANTIC_LABELS); h++ )
+        {
+            float binVal = h_3.at<float>(h);
+            descriptor.at<float>(0,(3*SEMANTIC_LABELS) + h)=binVal;
+        }
+        
+        
+        return descriptor;
+    }
+    
+    Mat descriptorsCONTEXT_GLOBAL(int SEMANTIC_LABELS = 60)
+    {
+        
+        Mat descriptor = Mat::zeros(1, (SEMANTIC_LABELS*4), CV_32FC1);
+        
+        //0
+        for( int h = 0; h < (SEMANTIC_LABELS); h++ )
+        {
+            float binVal = hGLOBAL_0.at<float>(h);
+            descriptor.at<float>(0,h)=binVal;
+        }
+        //1
+        for( int h = 0; h < (SEMANTIC_LABELS); h++ )
+        {
+            float binVal = hGLOBAL_1.at<float>(h);
+            descriptor.at<float>(0,SEMANTIC_LABELS + h)=binVal;
+        }
+        //2
+        for( int h = 0; h < (SEMANTIC_LABELS); h++ )
+        {
+            float binVal = hGLOBAL_2.at<float>(h);
+            descriptor.at<float>(0,(2*SEMANTIC_LABELS) + h)=binVal;
+        }
+        //3
+        for( int h = 0; h < (SEMANTIC_LABELS); h++ )
+        {
+            float binVal = hGLOBAL_3.at<float>(h);
+            descriptor.at<float>(0,(3*SEMANTIC_LABELS) + h)=binVal;
+        }
+        
+        
+        return descriptor;
+    }
+    
+    
     
     Mat descriptorsLINES(Mat image, int BINS = 8)
     {
