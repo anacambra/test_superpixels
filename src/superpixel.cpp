@@ -77,6 +77,8 @@ public:
     int getLabel(){ return _label;}
     Mat getMask(){ return _mask;}
     
+    
+    
     MatND getLabelSegmentation(){ return _labelSegmentation;}
     MatND getFirstLabelSegmentation(){ return _labelFirstSegmentation;}
     
@@ -490,6 +492,74 @@ public:
         timeLAB = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
         return descriptor;
     }//descriptorsLAB
+    
+    Mat descriptorsCONLAB(Mat image, int NBINS_L = 7, int NBINS_AB=7)
+    {
+        Mat descriptor = Mat::zeros(1, NBINS_L+NBINS_AB+NBINS_AB, CV_32FC1);
+        
+        Mat image_out;
+        cvtColor(image, image_out, CV_BGR2Lab);
+        
+        vector<Mat> spl;
+        split(image_out,spl);
+        
+        //L <- L * 255/100 ; a <- a + 128 ; b <- b + 128
+        
+        //0 < L < 100
+        int nbins = NBINS_L; // levels
+        int hsize[] = { nbins }; // just one dimension
+        
+        float range[] = { 0, (const float)(100)};
+        const float *ranges[] = { range };
+        int chnls[] = {0};
+        
+        spl[0]=spl[0] * (NBINS_L - 1)/255;
+        
+        calcHist(&spl[0], 1, chnls, Mat(), hist_l,1,hsize,ranges);
+        
+        for(int b = 0; b < nbins; b++ )
+        {
+            float binVal = hist_l.at<float>(b);
+            descriptor.at<float>(0,b)=binVal/(float)_numPixels;
+            //printf("%d %f\n",b,binVal);
+        }
+        
+        //-128 < a < 127
+        int nbinsA = NBINS_AB; // levels
+        int hsizeA[] = { nbinsA }; // just one dimension
+        
+        float rangeA[] = { 0, (const float)(256)};
+        const float *rangesA[] = { rangeA };
+        
+        //spl[1]=spl[1] - 128;
+        
+        calcHist(&spl[1], 1, chnls, Mat(), hist_a,1,hsizeA,rangesA);
+        
+        for(int b = 0; b < nbinsA; b++ )
+        {
+            float binVal = hist_a.at<float>(b);
+            descriptor.at<float>(0,NBINS_L+b)= binVal /(float)_numPixels;
+            //printf("%d %f\n",b,binVal);
+        }
+        
+        //-128 < b < 127
+        calcHist(&spl[2], 1, chnls, Mat(), hist_b,1,hsizeA,rangesA);
+        
+        for(int b = 0; b < nbinsA; b++ )
+        {
+            float binVal = hist_b.at<float>(b);
+            descriptor.at<float>(0,NBINS_L + NBINS_AB + b)= binVal /(float)_numPixels;
+            //printf("%d %f\n",b,binVal);
+        }
+        
+        spl[0].release();
+        spl[1].release();
+        spl[2].release();
+        image_out.release();
+        
+       // timeLAB = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
+        return descriptor;
+    }//descriptorsCONLAB
     
     Mat descriptorsRGB(Mat image, int BINS = 256)
     {

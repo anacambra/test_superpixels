@@ -35,6 +35,8 @@ using namespace boost;
 //#define DEBUG_SP 1
 
 int mLAB   = 0; int NBINS_L = 50; int NBINS_AB=128;
+int mCONLAB   = 0;
+
 int mRGB   = 0; int NBINS_RGB   = 256;
 int mPEAKS = 0; int NBINS_PEAKS = 128;
 
@@ -44,6 +46,8 @@ int mEDGES = 0; int NBINS_EDGES; int modeEDGES = 1;
 int mEDDIR = 0; int NBINS_EDDIR = 8;
 
 int mCAFFE = 0; string CAFFE_LAYER = "fc7"; int NUMCAFFE = 4096;
+int mCONCAFFE = 0;
+int mCONCAFFE2 = 0;
 
 int mSEMANTIC = 0; int SEMANTIC_LABELS = 12; //SEGNET
 int SEMANTIC2_LABELS = 23;
@@ -51,6 +55,7 @@ int SEMANTIC3_LABELS = 22;
 
 int mCONTEXT = 0; // semantic_neigbourg
 int mCONTEXT2 = 0; // oriented semantic_neigbourg
+
 
 int mGLOBAL = 0; // oriented ALL semantic
 
@@ -67,13 +72,21 @@ PCA* pca;
 /*int nSAMPLES = 50;
  string nameSVM = "svm_LAB_PEAKS_" + to_string(nSAMPLES) + "_NOTZERO.xml";*/
 
-Mat concatFileDescriptors(int id,Mat desRGB,Mat desLAB,Mat desEDGES,Mat desEDDIR, Mat desCAFFE, Mat desSEMANTIC, Mat desCONTEXT,Mat desCONTEXT2, Mat desGLOBAL)
+Mat concatFileDescriptors(int id,Mat desRGB,Mat desLAB,Mat desCONLAB,Mat desEDGES,Mat desEDDIR, Mat desCAFFE, Mat desSEMANTIC, Mat desCONTEXT,Mat desCONTEXT2, Mat desGLOBAL,Mat desCONCAFFE,Mat desCONCAFFE2)
 {
     Mat des;
     
     if (mLAB != 0)
     {
         des = desLAB.row(id);
+    }
+    
+    if (mCONLAB != 0)
+    {
+        if (des.rows != 0)
+            hconcat(desCONLAB.row(id), des,des);
+        else
+            des=desCONLAB.row(id);
     }
     
     if (mRGB != 0)
@@ -151,6 +164,22 @@ Mat concatFileDescriptors(int id,Mat desRGB,Mat desLAB,Mat desEDGES,Mat desEDDIR
             des=desCAFFE.row(id);
     }
     
+    if (mCONCAFFE != 0)
+    {
+        if (des.rows != 0)
+            hconcat(desCONCAFFE.row(id), des,des);
+        else
+            des=desCONCAFFE.row(id);
+    }
+    
+    if (mCONCAFFE2 != 0)
+    {
+        if (des.rows != 0)
+            hconcat(desCONCAFFE2.row(id), des,des);
+        else
+            des=desCONCAFFE2.row(id);
+    }
+    
     return des;
 }
 
@@ -160,11 +189,13 @@ void descriptors2file(FILE *fout, float fid, Mat desID, float acc);
 
 bool file2descriptors(string file, int size, Mat *descriptors, Mat *accText);
 bool descriptorFileText(string path,string img,int numID,
-                        Mat *desRGB,Mat *desLAB,
+                        Mat *desRGB,
+                        Mat *desLAB,  Mat *desCONLAB,
                         Mat *desEDGES,Mat *desEDDIR,
                         Mat *desCAFFE,
                         Mat *desSEMANTIC,
                         Mat *desCONTEXT,Mat *desCONTEXT2, Mat *desGLOBAL,
+                        Mat *desCONCAFFE,  Mat *desCONCAFFE2,
                         Mat *accText);
 
 void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges, string nameEdgesDIR, string nameSegmen);
@@ -601,6 +632,73 @@ void parseTXT(string name, string out, string dir_gt,string dir_out)
     fclose(fout);
 }
 
+void parseDIR(string dir,string folder,string out)
+{
+    FILE *fout;
+    
+    fout = fopen(out.c_str(),"w");
+    
+    
+    string dir_path = dir + "/" + folder;
+    
+    fprintf(fout," image-SegNet      percentage          precision             recall\n");
+    fprintf(fout,"------------------------------------------------------------------------\n");
+    
+    for (auto i = boost::filesystem::directory_iterator(dir_path); i != boost::filesystem::directory_iterator(); i++)
+    {
+        if (!is_directory(i->path()))
+        {
+            string nameImage = dir_path + "/" + i->path().filename().string();
+            string extension = i->path().filename().extension().string();
+            
+            if (extension == ".png" || extension == ".jpg" || extension == ".jpeg")
+            {
+                size_t pos1,pos2;
+                pos1=i->path().filename().string().find("img_");
+                pos2=i->path().filename().string().find("_SegNet");
+                
+                string file = i->path().filename().string().substr(pos1,(pos2-pos1));
+                string gt =  dir + "/gt/gt_" + file + ".png";
+                
+                Mat imgGT = imread(gt,CV_LOAD_IMAGE_GRAYSCALE);
+                
+                Mat resul = imread(nameImage,CV_LOAD_IMAGE_GRAYSCALE);
+                
+                
+                Mat imgTP,imgFP,imgFN;
+                
+                if (imgGT.rows != resul.rows || imgGT.cols != resul.rows)
+                    resize(imgGT, imgGT, resul.size());
+                
+                bitwise_and(imgGT,resul,imgTP);
+                
+                Mat notGT;
+                bitwise_not(imgGT,notGT);
+                bitwise_and(notGT,resul,imgFP);
+                
+                Mat notresul;
+                bitwise_not(resul,notresul);
+                bitwise_and(imgGT,notresul,imgFN);
+                
+                int tp = countNonZero(imgTP);
+                int tpfp = countNonZero(imgTP) + countNonZero(imgFP);
+                int tpfn = countNonZero(imgTP) + countNonZero(imgFN);
+                
+                float precision = (float)tp / (float)tpfp;
+                float recall = (float)tp / (float)tpfn ;
+                
+                float per= countNonZero(resul)*100.0/float(resul.cols*resul.rows);
+                
+                fprintf(fout,"%-20s%-20f%-20f%-20f\n",file.c_str(),per,precision,recall);
+               // printf("---> %s \n %s  %f %f %f n\n",nameImage.c_str(),gt.c_str(),precision, recall, per);
+               // imshow("GT",imgGT);imshow("resul",resul); waitKey(0);
+            }
+        }
+    }
+    
+    fclose(fout);
+}
+
 /********************************************************************************************************************************
  
     MAIN
@@ -623,10 +721,12 @@ int main(int argc, const char * argv[]) {
     
     return 0;//*/
     
-    parseTXT("/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/stdout_svt1_RBF_570_response1_test_table.txt",
-             "/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/resul_svt1_RBF_570_response1_test_table.txt",
-             "/Users/acambra/TESIS/datasets/svt1/test/gt/gt_",
-             "");
+   /* parseDIR("/Users/acambra/SegNet/SegNet_text/ICDAR/test","train_svt1_ICDAR_iter_60000","/Users/acambra/SegNet/SegNet_text/ICDAR/test/test_segNet_svt1_ICDAR_60000.txt");
+    return 2;//*/
+    
+    parseTXT("/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/stdout_svt1_test_combined_response0_2.txt",
+             "/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/resul_svt1_test_combined_response0_2.txt",
+             "/Users/acambra/TESIS/datasets/svt1/test/gt/gt_", "");
     return 1;//*/
     
     //parse argv
@@ -669,8 +769,25 @@ int main(int argc, const char * argv[]) {
     //SVM Options
     int nSAMPLES = parameters["nSamples"].as<int>(); printf("nsamples \n");
     
-    
-    if (parameters["svmOptions"].as<std::string>().find("LAB") != std::string::npos)
+    if (parameters["svmOptions"].as<std::string>().find("CONLAB7") != std::string::npos)
+    {
+        mCONLAB = 1;
+        NBINS_L = 7;
+        NBINS_AB= 7;
+        
+    }else if (parameters["svmOptions"].as<std::string>().find("LAB7") != std::string::npos)
+    {
+        mLAB = 1;
+        NBINS_L = 7;
+        NBINS_AB= 7;
+        
+    }else if (parameters["svmOptions"].as<std::string>().find("LAB9") != std::string::npos)
+    {
+        mLAB = 1;
+        NBINS_L = 9;
+        NBINS_AB= 9;
+        
+    }else if (parameters["svmOptions"].as<std::string>().find("LAB") != std::string::npos)
     {
         mLAB = 1;
     }
@@ -752,15 +869,21 @@ int main(int argc, const char * argv[]) {
         ifstream infile(nameSVM2);
         if (! infile.good()) {
             
-            if (parameters["svmOptions"].as<std::string>().find("CAFFE") != std::string::npos)
+            if (parameters["svmOptions"].as<std::string>().find("CONCAFFE2") != std::string::npos)
             {
-                mCAFFE = 1;
+                mCONCAFFE2 = 1;
                 //initCaffe
                 /*string model = "/Users/acambra/Dropbox/test_caffe/bvlc_reference_caffenet.caffemodel";
                 string proto = "/Users/acambra/Dropbox/test_caffe/deploy.prototxt" ;
                 //printf("Model CAFFE: %s PROTO: %s\n",model.c_str(),proto.c_str());getchar();
                 
                 _caffe = new utilsCaffe(model,proto);*/
+            }else if (parameters["svmOptions"].as<std::string>().find("CONCAFFE") != std::string::npos)
+            {
+                mCONCAFFE = 1;
+            }else if (parameters["svmOptions"].as<std::string>().find("CAFFE") != std::string::npos)
+            {
+                mCAFFE = 1;
             }
             
             string path = "/Users/acambra/TESIS/datasets/";// "/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/";
@@ -835,8 +958,8 @@ int main(int argc, const char * argv[]) {
         
         SPCTE= svmSuperpixelsTEXT(nameImage,2,nameGT,nameSegmen);
         
-        Mat imgSP = SPCTE->getImage();//Superpixels().clone();
-        Mat imgSP_2 = SPCTE->getImage();
+        Mat imgSP = SPCTE->getImage().clone();//Superpixels().clone();
+        //Mat imgSP_2 = SPCTE->getImage();
         /*imshow("superpixels",SPCTE->getImageSuperpixels());
          waitKey(0);//*/
         
@@ -862,13 +985,20 @@ int main(int argc, const char * argv[]) {
         int numNOText=0;
         clock_t start = clock();
         
-        if (parameters["svmOptions"].as<std::string>().find("CAFFE") != std::string::npos)
+        if (parameters["svmOptions"].as<std::string>().find("CONCAFFE2") != std::string::npos)
+        {
+            mCONCAFFE2 = 1;
+        }else if (parameters["svmOptions"].as<std::string>().find("CONCAFFE") != std::string::npos)
+        {
+            mCONCAFFE = 1;
+        }
+        else if (parameters["svmOptions"].as<std::string>().find("CAFFE") != std::string::npos)
         {
             mCAFFE = 1;
         }
         
         //READ????
-        Mat desRGB,desLAB,desEDGES,desEDDIR,desCAFFE,desSEMANTIC,desCONTEXT,desCONTEXT2,desGLOBAL,accText;
+        Mat desRGB,desLAB,desCONLAB,desEDGES,desEDDIR,desCAFFE,desCONCAFFE,desCONCAFFE2,desSEMANTIC,desCONTEXT,desCONTEXT2,desGLOBAL,accText;
         int num = SPCTE->maxID+1;
         string file = nameImage.substr((int)nameImage.find_last_of("/")+1);
         
@@ -876,7 +1006,7 @@ int main(int argc, const char * argv[]) {
         dir_des=dir_des.substr(0,(int)dir_des.find_last_of("/"))+ "/descriptors/";
         
        // desSEMANTIC = Mat::zeros(num,2*(SEMANTIC_LABELS),CV_32FC1);*/
-        bool readDescriptor = descriptorFileText(dir_des,file, num,&desRGB,&desLAB,&desEDGES,&desEDDIR,&desCAFFE,&desSEMANTIC,&desCONTEXT,&desCONTEXT2,&desGLOBAL,&accText);
+        bool readDescriptor = descriptorFileText(dir_des,file, num,&desRGB,&desLAB,&desCONLAB,&desEDGES,&desEDDIR,&desCAFFE,&desSEMANTIC,&desCONTEXT,&desCONTEXT2,&desGLOBAL,&desCONCAFFE,&desCONCAFFE2,&accText);
         
         string nameEdges="";
         if (parameters.find("edges") != parameters.end())
@@ -887,7 +1017,7 @@ int main(int argc, const char * argv[]) {
             nameEdgesDIR = parameters["eddir"].as<std::string>();
         
         
-        if (mCAFFE == 1 && !readDescriptor)
+        if ((mCAFFE == 1 || mCONCAFFE == 1 || mCONCAFFE2 == 1) && !readDescriptor)
         {
             string model = "/Users/acambra/Dropbox/test_caffe/bvlc_reference_caffenet.caffemodel";
             string proto = "/Users/acambra/Dropbox/test_caffe/deploy.prototxt" ;
@@ -909,6 +1039,7 @@ int main(int argc, const char * argv[]) {
         {
             //save
             saveSUPERPIXELSdescriptors(SPCTE,dir_des + file,nameEdges,nameEdgesDIR,nameSegmen);
+            descriptorFileText(dir_des,file, num,&desRGB,&desLAB,&desCONLAB,&desEDGES,&desEDDIR,&desCAFFE,&desSEMANTIC,&desCONTEXT,&desCONTEXT2,&desGLOBAL,&desCONCAFFE,&desCONCAFFE2,&accText);
         }
         
         for (int id=0; id < SPCTE->maxID+1; id++)
@@ -924,30 +1055,15 @@ int main(int argc, const char * argv[]) {
                 }
             }
             
-            /*string nameEdges="";
-            if (parameters.find("edges") != parameters.end())
-                nameEdges = parameters["edges"].as<std::string>();
-            
-            string nameEdgesDIR="";
-            if (parameters.find("eddir") != parameters.end())
-                nameEdgesDIR = parameters["eddir"].as<std::string>();
-            
-            string nameSegmen="";
-            if (parameters.find("semantic") != parameters.end())
-                nameSegmen = parameters["semantic"].as<std::string>();*/
-            
             //DESCRIPTOR SUPERPIXEL: calculate or read
             Mat desID;//,desF;
-            //Mat desF;
             
-            //Mat desID = descriptorText(SPCTE, id, nameEdges, nameEdgesDIR, nameSegmen);
+           // Mat desF =   concatFileDescriptors(id,desRGB,desLAB,desCONLAB,desEDGES, desEDDIR,  desCAFFE,  desSEMANTIC ,desCONTEXT,desCONTEXT2,desGLOBAL,desCONCAFFE,desCONCAFFE2).clone();
             
             if (readDescriptor)
-                desID =  concatFileDescriptors(id,desRGB,desLAB,desEDGES, desEDDIR,  desCAFFE,  desSEMANTIC, desCONTEXT,desCONTEXT2,desGLOBAL);//desSEMANTIC.row(id);
-            //desF =  concatFileDescriptors(id,desRGB,desLAB,desEDGES, desEDDIR,  desCAFFE,  desSEMANTIC, desCONTEXT,desCONTEXT2).clone();
-
+                desID =  concatFileDescriptors(id,desRGB,desLAB,desCONLAB,desEDGES, desEDDIR,  desCAFFE,  desSEMANTIC, desCONTEXT,desCONTEXT2,desGLOBAL,desCONCAFFE,desCONCAFFE2);
             else
-             desID = descriptorText(SPCTE, id, nameEdges, nameEdgesDIR, nameSegmen);
+                desID = descriptorText(SPCTE, id, nameEdges, nameEdgesDIR, nameSegmen);
 
             
            /*for (int i=0; i<desID.cols; i++)
@@ -960,25 +1076,6 @@ int main(int argc, const char * argv[]) {
             if (SVM.get_var_count() != 0)
             {
                 
-               /* if (USE_PCA)
-                {
-                    Mat projectedMat = pca->project(desID.row(0));
-                    
-                    float responsePCA = SVM.predict(projectedMat);
-
-                   
-                    if (responsePCA == (LABEL_TEXT))
-                    {
-                         printf("PCA SVM id: %d  %f TEXT\n",id,responsePCA);
-                        imgSP = SPCTE->paintSuperpixel(imgSP, id, new Scalar(0,255,0)).clone();
-                    }
-                    else
-                         printf("PCA SVM id: %d  %f NO\n",id,responsePCA);
-                        
-                }
-                else{*/
-                    
-                    
                     float response = SVM.predict(desID);
                     printf("RESPONSE SVM id: %d  %f\n",id,response);
                     //paint image with SVM response
@@ -994,17 +1091,17 @@ int main(int argc, const char * argv[]) {
                     else
                     {
                         response = SVM.predict(desID,true); //distance
-                        /*if (response <= 0.75)
+                        if (response <= 0.0)
                         {
                         //    imgSP_2 = SPCTE->paintSuperpixel(imgSP_2, id, new Scalar(0,255,0)).clone();
                             imgSP = SPCTE->paintSuperpixel(imgSP, id).clone();
-                        /*    if (DEBUG) printf("\t*** SVM response id: %d  TEXT????? (%f)\n",id,response);
+                            if (DEBUG) printf("\t*** SVM response id: %d  TEXT????? (%f)\n",id,response);
                         }
                         else
-                        {*/
+                        {
                             numNOText += SPCTE->numPixels(id);
                             if (DEBUG) printf("\t*** SVM response id: %d  NO TEXT (%f)\n",id,response);
-                        //}
+                        }
                             
                     }
                // }
@@ -1019,29 +1116,6 @@ int main(int argc, const char * argv[]) {
                 destroyWindow(nameWindow.c_str());
                 nameWindow = "Superpixel " + to_string(id);
                 imshow(nameWindow.c_str(),SPCTE->cropSuperpixel(SPCTE->getImageSuperpixels(),id,3));
-                
-                //
-                
-                /* imshow(nameWindow.c_str(),SPCTE->cropSuperpixel(SPCTE->getImageSuperpixels().clone(),id,3));
-                 Mat img_sp;
-                 Mat imgEdges = imread(parameters["edges"].as<std::string>(),CV_LOAD_IMAGE_COLOR);
-                 //imshow("img EDGES ",imgEdges);
-                 
-                 Mat desID = descriptorText(SPCTE,id);//= SPCTE->calculateDescriptors(id,SPCTE->getImage() \
-                 ,mLAB,NBINS_L,NBINS_AB \
-                 ,mRGB,NBINS_RGB\
-                 ,mPEAKS,NBINS_PEAKS \
-                 ,mEDGES,NBINS_EDGES,modeEDGES,imgEdges\
-                 ,mCAFFE,CAFFE_LAYER,NUMCAFFE\
-                 ,mSEMANTIC,SEMANTIC_LABELS).clone();*/
-                
-                //evaluate
-                /* float response = SVM.predict(desID);//,true);
-                 printf("RESPONSE SVM id: %d  %f\n",id,response);
-                 
-                 //paint image with SVM response
-                 if (response >= LABEL_TEXT)
-                 imgSP = SPCTE->paintSuperpixel(imgSP, id).clone();//*/
                 
                 if ((char)k != 'c')
                     k = waitKey(0);
@@ -1095,18 +1169,31 @@ int main(int argc, const char * argv[]) {
 //TRAIN SVM
 //change!!!!!!
 bool descriptorFileText(string path, string img,int numID,
-                        Mat *desRGB,Mat *desLAB,Mat *desEDGES,Mat *desEDDIR, Mat *desCAFFE, Mat *desSEMANTIC,
+                        Mat *desRGB,
+                        Mat *desLAB, Mat *desCONLAB,
+                        Mat *desEDGES,Mat *desEDDIR, Mat *desCAFFE, Mat *desSEMANTIC,
                         Mat *desCONTEXT,Mat *desCONTEXT2, Mat *desGLOBAL,
+                        Mat *desCONCAFFE, Mat *desCONCAFFE2,
                         Mat *accText)
 {
     //check Files
-    img = path + "/"+ img;
+    img = path + img;
     
     string fRGB = img + "_RGB" + ".bin";
     string fLAB = img + "_LAB" + ".bin";
+    
+    if (NBINS_L == 7 && NBINS_AB == 7)
+        fLAB = img + "_LAB7" + ".bin";
+    else if (NBINS_L == 9 && NBINS_AB == 9)
+        fLAB = img + "_LAB9" + ".bin";
+    
+    string fCONLAB = img + "_CONLAB7" + ".bin";
+    
     string fEDGES = img + "_EDGES" + ".bin";
     string fEDDIR = img + "_EDDIR" + ".bin";
     string fCAFFE = img + "_CAFFE" + ".bin";
+    string fCONCAFFE = img + "_CONCAFFE" + ".bin";
+    string fCONCAFFE2 = img + "_CONCAFFE2" + ".bin";
     string fSEMANTIC = img + "_SEMANTIC" + ".bin";
     string fCONTEXT = img + "_CONTEXT" + ".bin";
     string fCONTEXT2 = img + "_CONTEXT2" + ".bin";
@@ -1136,6 +1223,13 @@ bool descriptorFileText(string path, string img,int numID,
         ok = ok && file2descriptors(fLAB,numDES,desLAB, accText);
     }
     
+    if (mCONLAB == 1 && ok)
+    {
+        numDES =  7 + (2*7);
+        (*desCONLAB) = Mat::zeros(numID,numDES,CV_32FC1);
+        ok = ok && file2descriptors(fCONLAB,numDES,desCONLAB, accText);
+    }
+    
     if (mEDGES == 1 && ok)
     {
         numDES = NBINS_EDGES;
@@ -1155,6 +1249,20 @@ bool descriptorFileText(string path, string img,int numID,
         numDES = NUMCAFFE;
         (*desCAFFE) = Mat::zeros(numID,numDES,CV_32FC1);
         ok = ok && file2descriptors(fCAFFE,numDES,desCAFFE, accText);
+    }
+    
+    if (mCONCAFFE == 1 && ok)
+    {
+        numDES = NUMCAFFE;
+        (*desCONCAFFE) = Mat::zeros(numID,numDES,CV_32FC1);
+        ok = ok && file2descriptors(fCONCAFFE,numDES,desCONCAFFE, accText);
+    }
+    
+    if (mCONCAFFE2 == 1 && ok)
+    {
+        numDES = NUMCAFFE;
+        (*desCONCAFFE2) = Mat::zeros(numID,numDES,CV_32FC1);
+        ok = ok && file2descriptors(fCONCAFFE2,numDES,desCONCAFFE2, accText);
     }
     
     if (mSEMANTIC == 1 && ok)
@@ -1205,6 +1313,9 @@ Mat descriptorText(SuperPixels *SPCTE, int id, string nameEdges,string nameEdges
         if (mLAB != 0)
             info += "LAB ";
         
+        if (mCONLAB != 0)
+            info += "CONLAB ";
+        
         if (mRGB != 0)
             info += "RGB ";
         
@@ -1218,6 +1329,9 @@ Mat descriptorText(SuperPixels *SPCTE, int id, string nameEdges,string nameEdges
         
         if (mCAFFE != 0)
             info += "CAFFE ";
+        
+        if (mCONCAFFE != 0)
+            info += "CONTEXTCAFFE ";
         
         if (mSEMANTIC != 0)
             info += "SEMANTIC";
@@ -1285,7 +1399,10 @@ Mat descriptorText(SuperPixels *SPCTE, int id, string nameEdges,string nameEdges
                                           ,mSEMANTIC,SEMANTIC_LABELS \
                                           ,mCONTEXT,SEMANTIC_LABELS \
                                           ,mCONTEXT2,SEMANTIC_LABELS \
-                                          ,mGLOBAL,SEMANTIC_LABELS).clone();
+                                          ,mGLOBAL,SEMANTIC_LABELS\
+                                          ,mCONLAB).clone();
+    
+    
     //caffe
     
     if (mCAFFE == 1)
@@ -1316,8 +1433,53 @@ Mat descriptorText(SuperPixels *SPCTE, int id, string nameEdges,string nameEdges
         
     }
     
+    if (mCONCAFFE == 1)
+    {
+        Mat imageSP = SPCTE->getImage().clone();
+       //imshow("CONTEXT",imageSP);
+        
+        Mat mask = SPCTE->getMaskNeigbours(id);
+        
+        Mat nonZeroCoordinates;
+        findNonZero( mask, nonZeroCoordinates);
+        
+        double minX=imageSP.cols, minY=imageSP.rows, maxX=0.0,maxY=0.0;
+        
+        for (int i = 0; i < nonZeroCoordinates.total(); i++ )
+        {
+            if (nonZeroCoordinates.at<Point>(i).x <= minX) minX = nonZeroCoordinates.at<Point>(i).x;
+            else if (nonZeroCoordinates.at<Point>(i).x >= maxX) maxX =  nonZeroCoordinates.at<Point>(i).x;
+            
+            if (nonZeroCoordinates.at<Point>(i).y <= minY) minY = nonZeroCoordinates.at<Point>(i).y;
+            else if (nonZeroCoordinates.at<Point>(i).y >= maxY) maxY =  nonZeroCoordinates.at<Point>(i).y;
+        }
+        
+        Mat maskID = SPCTE->_arraySP[id].getMask().clone();
+        bitwise_not(maskID, maskID);
+        cvtColor(maskID,maskID,CV_GRAY2BGR);
+        bitwise_and(imageSP,maskID, imageSP);
+        
+        Mat roi = imageSP(Rect(minX,minY,maxX-minX, maxY-minY)).clone();
+        
+       
+       /* imshow("roi",roi);
+       /// imshow("imageSP",imageSP);
+        waitKey(0);//*/
+        Mat desCaf= _caffe->features(roi, "fc7").clone();
+        normalize(desCaf, desCaf);
+        
+        if (des.rows != 0)
+            hconcat(desCaf,des,des);
+        else
+            des=desCaf.clone();
+        
+        mask.release();
+        maskID.release();
+        roi.release();
+        imageSP.release();
+    }
+
     return des;
-    
 }
 
 void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir_edgesDIR,string dir_segmen, int nSAMPLES, string nameSVM, string dir_des, string filename)
@@ -1352,11 +1514,14 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
         int numDES = 0;
         
         if (mLAB == 1)      numDES += NBINS_L + (2*NBINS_AB);
+        if (mCONLAB == 1)      numDES += NBINS_L + (2*NBINS_AB);
         if (mRGB == 1)      numDES += (3*NBINS_RGB);
         if (mPEAKS == 1)    numDES += NBINS_PEAKS;
         if (mEDGES == 1)    numDES += NBINS_EDGES;
         if (mEDDIR == 1)    numDES += NBINS_EDDIR;
         if (mCAFFE == 1)    numDES += NUMCAFFE;
+        if (mCONCAFFE == 1)    numDES += NUMCAFFE;
+        if (mCONCAFFE2 == 1)    numDES += NUMCAFFE;
         if (mSEMANTIC == 1) numDES += (SEMANTIC_LABELS);
         if (mCONTEXT == 1)  numDES += (SEMANTIC_LABELS);
         if (mCONTEXT2 == 1) numDES += (4*SEMANTIC_LABELS);
@@ -1492,8 +1657,8 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
                    // if (false)
                    // {
                         printf("---> Saving descriptors: %s\n",i->path().filename().string().c_str());
-                    string dir_des = "/Users/acambra/TESIS/datasets/svt1/train/descriptors/" + i->path().filename().string();
-                        saveSUPERPIXELSdescriptors(SPCTE,dir_des,nameEdges,nameEdgesDIR,nameSegmen);
+                        string dir_des = "/Users/acambra/TESIS/datasets/svt1/train/descriptors/";// + i->path().filename().string();
+                        saveSUPERPIXELSdescriptors(SPCTE,dir_des + i->path().filename().string(),nameEdges,nameEdgesDIR,nameSegmen);
                        // delete(SPCTE);
                    // }
                    // else
@@ -1653,8 +1818,6 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
         // Train the SVM
         CvSVM SVM;
         
-        
-        
         if ((nameSVM.find("AUTO") != std::string::npos))
         {
             SVM.train_auto(trainingData, labels, Mat(), Mat(), params);
@@ -1685,11 +1848,11 @@ void calculateSUPERPIXELSdescriptors(SuperPixels *SPCTE, string nameEdges, strin
 {
 
     //READ????
-    Mat desRGB,desLAB,desEDGES,desEDDIR,desCAFFE,desSEMANTIC, desCONTEXT, desCONTEXT2, desGLOBAL;
+    Mat desRGB,desLAB,desCONLAB,desEDGES,desEDDIR,desCAFFE,desCONCAFFE,desCONCAFFE2,desSEMANTIC, desCONTEXT, desCONTEXT2, desGLOBAL;
     int num = SPCTE->maxID+1;
     
     // desSEMANTIC = Mat::zeros(num,2*(SEMANTIC_LABELS),CV_32FC1);*/
-    bool readDescriptor = descriptorFileText(path,img, num,&desRGB,&desLAB,&desEDGES,&desEDDIR,&desCAFFE,&desSEMANTIC,&desCONTEXT,&desCONTEXT2,&desGLOBAL,accText);
+    bool readDescriptor = descriptorFileText(path,img, num,&desRGB,&desLAB,&desCONLAB,&desEDGES,&desEDDIR,&desCAFFE,&desSEMANTIC,&desCONTEXT,&desCONTEXT2,&desGLOBAL,&desCONCAFFE,&desCONCAFFE2,accText);
     
     //for each id in the image
     for (int id=0; (id < SPCTE->maxID+1) ; id++)
@@ -1699,7 +1862,7 @@ void calculateSUPERPIXELSdescriptors(SuperPixels *SPCTE, string nameEdges, strin
         Mat desID;
         
         if (readDescriptor)
-            desID =  concatFileDescriptors(id,desRGB,desLAB,desEDGES, desEDDIR,  desCAFFE,  desSEMANTIC, desCONTEXT,desCONTEXT2,desGLOBAL);//desSEMANTIC.row(id);
+            desID =  concatFileDescriptors(id,desRGB,desLAB,desCONLAB,desEDGES, desEDDIR,  desCAFFE,  desSEMANTIC, desCONTEXT,desCONTEXT2,desGLOBAL,desCONCAFFE,desCONCAFFE2);//desSEMANTIC.row(id);
         
         else
             desID = descriptorText(SPCTE, id, nameEdges, nameEdgesDIR, nameSegmen);
@@ -1719,7 +1882,7 @@ void descriptors2file(FILE *fout, float fid, Mat desID, float acc)
     for(int d=0; d < desID.cols; d++)
     {
         fwrite(&desID.at<float>(d),sizeof(float),1,fout);
-        //printf("id: %f descriptor: %d %f\n",fid,d,desID.at<float>(d));
+        printf("id: %f descriptor: %d %f\n",fid,d,desID.at<float>(d));
     }
     
     fwrite(&acc,sizeof(float),1,fout);
@@ -1762,15 +1925,24 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
     
     string fRGB = img + "_RGB" + ".bin";
     string fLAB = img + "_LAB" + ".bin";
+    string fCONLAB = img + "_CONLAB7" + ".bin";
+    
+    if (NBINS_L == 7 && NBINS_AB == 7)
+        fLAB = img + "_LAB7" + ".bin";
+    else if (NBINS_L == 9 && NBINS_AB == 9)
+        fLAB = img + "_LAB9" + ".bin";
+    
     string fEDGES = img + "_EDGES" + ".bin";
     string fEDDIR = img + "_EDDIR" + ".bin";
     string fCAFFE = img + "_CAFFE" + ".bin";
+    string fCONCAFFE = img + "_CONCAFFE" + ".bin";
+    string fCONCAFFE2 = img + "_CONCAFFE2" + ".bin";
     string fSEMANTIC = img + "_SEMANTIC" + ".bin";
     string fCONTEXT= img + "_CONTEXT" + ".bin";
     string fCONTEXT2= img + "_CONTEXT2" + ".bin";
     string fGLOBAL= img + "_GLOBAL" + ".bin";
     
-    FILE* frgb,*flab,*fedges,*feddir,*fcaffe,*fsemantic,*fcontext,*fcontext2,*fglobal;
+    FILE* frgb,*flab,*fconlab,*fedges,*feddir,*fcaffe,*fsemantic,*fcontext,*fcontext2,*fglobal,*fconcaffe,*fconcaffe2;
     
     //EDGES
     Mat imgEdges;//= imread(nameEdges,CV_LOAD_IMAGE_COLOR);
@@ -1782,6 +1954,12 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
     if (! infile.good() && mLAB == 1)
     {
         flab = fopen(fLAB.c_str(), "wb");
+    }
+    
+    ifstream infile11(fCONLAB);
+    if (! infile11.good() && mCONLAB == 1)
+    {
+        fconlab = fopen(fCONLAB.c_str(), "wb");
     }
     
     //RGB: ID DES ACC
@@ -1845,6 +2023,17 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
     {
         fcaffe = fopen(fCAFFE.c_str(), "wb");
     }
+    ifstream infile9(fCONCAFFE);
+    if (! infile9.good() && mCONCAFFE == 1)
+    {
+        fconcaffe = fopen(fCONCAFFE.c_str(), "wb");
+    }
+    
+    ifstream infile10(fCONCAFFE2);
+    if (! infile10.good() && mCONCAFFE2 == 1)
+    {
+        fconcaffe2 = fopen(fCONCAFFE2.c_str(), "wb");
+    }
 
 
     Mat desID;
@@ -1867,6 +2056,25 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
                                                 ,0,CAFFE_LAYER,NUMCAFFE\
                                                 ,0,SEMANTIC_LABELS).clone();
             descriptors2file(flab, fid, desID, acc);
+        }
+        
+        if ( !infile11.good() && mCONLAB == 1)
+        {
+            desID = SPCTE->calculateDescriptors(id,SPCTE->getImage() \
+                                                ,0,7,7 \
+                                                ,0,NBINS_RGB\
+                                                ,0,NBINS_PEAKS \
+                                                ,0,NBINS_EDGES,modeEDGES,imgEdges\
+                                                ,0,NBINS_EDDIR,imgEdgesDIR\
+                                                ,0,CAFFE_LAYER,NUMCAFFE\
+                                                ,0,SEMANTIC_LABELS\
+                                                ,0,SEMANTIC_LABELS\
+                                                ,0,SEMANTIC_LABELS \
+                                                ,0,SEMANTIC_LABELS \
+                                                ,1).clone();
+            descriptors2file(fconlab, fid, desID, acc);
+            
+            
         }
         
         //RGB: ID DES ACC
@@ -1984,7 +2192,85 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
             
             descriptors2file(fcaffe, fid, desCaf, acc);
         }
-        
+        if (! infile9.good() && mCONCAFFE == 1)
+        {
+            
+            Mat imageSP = SPCTE->getImage().clone();
+            Mat mask = SPCTE->getMaskNeigbours(id);
+            
+            Mat nonZeroCoordinates;
+            findNonZero( mask, nonZeroCoordinates);
+            
+            double minX=imageSP.cols, minY=imageSP.rows, maxX=0.0,maxY=0.0;
+            
+            for (int i = 0; i < nonZeroCoordinates.total(); i++ )
+            {
+                if (nonZeroCoordinates.at<Point>(i).x <= minX) minX = nonZeroCoordinates.at<Point>(i).x;
+                else if (nonZeroCoordinates.at<Point>(i).x >= maxX) maxX =  nonZeroCoordinates.at<Point>(i).x;
+                
+                if (nonZeroCoordinates.at<Point>(i).y <= minY) minY = nonZeroCoordinates.at<Point>(i).y;
+                else if (nonZeroCoordinates.at<Point>(i).y >= maxY) maxY =  nonZeroCoordinates.at<Point>(i).y;
+            }
+            
+            Mat maskID = SPCTE->_arraySP[id].getMask().clone();
+            bitwise_not(maskID, maskID);
+            cvtColor(maskID,maskID,CV_GRAY2BGR);
+            bitwise_and(imageSP,maskID, imageSP);
+            
+            Mat roi = imageSP(Rect(minX,minY,maxX-minX, maxY-minY)).clone();
+            
+            Mat desCaf= _caffe->features(roi, "fc7").clone();
+            normalize(desCaf, desCaf);
+            
+            descriptors2file(fconcaffe, fid, desCaf, acc);
+        }
+        if (! infile10.good() && mCONCAFFE2 == 1)
+        {
+            Mat imageSP = SPCTE->getImage().clone();
+            Mat maskID = SPCTE->_arraySP[id].getMask().clone();//mask sp black
+    
+            
+            Mat nonZeroCoordinates;
+            findNonZero( maskID, nonZeroCoordinates);
+            
+            double minX=imageSP.cols, minY=imageSP.rows, maxX=0.0,maxY=0.0;
+            
+            for (int i = 0; i < nonZeroCoordinates.total(); i++ )
+            {
+                if (nonZeroCoordinates.at<Point>(i).x <= minX) minX = nonZeroCoordinates.at<Point>(i).x;
+                else if (nonZeroCoordinates.at<Point>(i).x >= maxX) maxX =  nonZeroCoordinates.at<Point>(i).x;
+                
+                if (nonZeroCoordinates.at<Point>(i).y <= minY) minY = nonZeroCoordinates.at<Point>(i).y;
+                else if (nonZeroCoordinates.at<Point>(i).y >= maxY) maxY =  nonZeroCoordinates.at<Point>(i).y;
+            }
+            
+            rectangle(imageSP, Rect(minX,minY,maxX-minX, maxY-minY), Scalar(0,0,0), -1, 8, 0 );
+            
+            //vecinos
+            Mat mask = SPCTE->getMaskNeigbours(id);
+            findNonZero( mask, nonZeroCoordinates);
+            
+            double minXn=imageSP.cols, minYn=imageSP.rows, maxXn=0.0,maxYn=0.0;
+            
+            for (int i = 0; i < nonZeroCoordinates.total(); i++ )
+            {
+                if (nonZeroCoordinates.at<Point>(i).x <= minXn) minXn = nonZeroCoordinates.at<Point>(i).x;
+                else if (nonZeroCoordinates.at<Point>(i).x >= maxXn) maxXn =  nonZeroCoordinates.at<Point>(i).x;
+                
+                if (nonZeroCoordinates.at<Point>(i).y <= minYn) minYn = nonZeroCoordinates.at<Point>(i).y;
+                else if (nonZeroCoordinates.at<Point>(i).y >= maxYn) maxYn =  nonZeroCoordinates.at<Point>(i).y;
+            }
+            
+            Mat roi = imageSP(Rect(minXn,minYn,maxXn-minXn, maxYn-minYn)).clone();
+            
+            //imshow("roi",roi);waitKey(0);
+            
+            Mat desCaf= _caffe->features(roi, "fc7").clone();
+            normalize(desCaf, desCaf);
+            
+            descriptors2file(fconcaffe2, fid, desCaf, acc);
+        }
+
     }//for superpixels
     
     printf("\tSaved descriptors: %s\n",img.c_str());
@@ -2007,6 +2293,12 @@ void saveSUPERPIXELSdescriptors(SuperPixels *SPCTE, string img, string nameEdges
     if (! infile8.good() && mGLOBAL == 1) fclose(fglobal);
     
     if (! infile6.good() && mCAFFE == 1)  fclose(fcaffe);
+    
+    if (! infile9.good() && mCONCAFFE == 1)  fclose(fconcaffe);
+    
+    if (! infile10.good() && mCONCAFFE2 == 1)  fclose(fconcaffe2);
+    
+    if (! infile11.good() && mCONLAB == 1)  fclose(fconlab);
 
     
 }

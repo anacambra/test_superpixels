@@ -99,6 +99,26 @@ public:
         return _arraySP[id].getNumPixels();
     }
     
+    Mat getMaskNeigbours(int id)
+    {
+        set<int> neig = _arraySP[id].getFirstNeighbours();
+        int ln=0;
+        
+        std::set<int>::iterator it;
+        
+        Mat maskN = Mat::zeros(_image.rows,_image.cols, CV_8UC1);
+        for (it=neig.begin(); it!=neig.end(); ++it)
+        {
+            ln = _arraySP[id].addHistogramLabelSegmentation(_arraySP[*it].getLabelSegmentation());
+            //printf("id: %d neig: %d l=%d  %d\n",id1,*it,ln,(int)neig.size());//getchar();
+            //concat mask
+            bitwise_or(maskN, _arraySP[*it].getMask(),maskN);
+        }
+        
+        return maskN;
+        
+    }
+    
     /*************************************************************************************
      * SuperPixels: obtain superpixels of an image (path)
      *  load _image (path) and obtain its superpixels
@@ -676,7 +696,7 @@ public:
     
 
     /////////////
-    Mat calculateDescriptors(int i, Mat image,
+    Mat calculateDescriptors(int id, Mat image,
                               int mLAB   = 0, int NBINS_L     = 50, int NBINS_AB=128,
                               int mRGB   = 0, int NBINS_RGB   = 256,
                               int mPEAKS = 0, int NBINS_PEAKS = 64,
@@ -686,53 +706,95 @@ public:
                               int mSEMANTIC = 0, int SEMANTIC_LABELS = 60,
                               int mCONTEXT = 0, int CONTEXT_LABELS = 60,
                               int mCONTEXT2 = 0, int CONTEXT2_LABELS = 60,
-                              int mGLOBAL = 0, int GLOBAL_LABELS = 60)
+                              int mGLOBAL = 0, int GLOBAL_LABELS = 60,
+                              int mCONLAB = 0)
     {
         Mat des;
         
         if (mLAB != 0)
         {
-            
             clock_t start = clock();
-            des=_arraySP[i].descriptorsLAB(image,NBINS_L,NBINS_AB).clone();
+            des=_arraySP[id].descriptorsLAB(image,NBINS_L,NBINS_AB).clone();
             timeLAB += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
             
+        }
+        
+        if (mCONLAB != 0)
+        {
+            Mat imageSP = image.clone();
+            Mat maskID = _arraySP[id].getMask().clone();//mask sp black
+            
+            Mat nonZeroCoordinates;
+            findNonZero( maskID, nonZeroCoordinates);
+            
+            double minX=imageSP.cols, minY=imageSP.rows, maxX=0.0,maxY=0.0;
+            
+            for (int i = 0; i < nonZeroCoordinates.total(); i++ )
+            {
+                if (nonZeroCoordinates.at<Point>(i).x <= minX) minX = nonZeroCoordinates.at<Point>(i).x;
+                else if (nonZeroCoordinates.at<Point>(i).x >= maxX) maxX =  nonZeroCoordinates.at<Point>(i).x;
+                
+                if (nonZeroCoordinates.at<Point>(i).y <= minY) minY = nonZeroCoordinates.at<Point>(i).y;
+                else if (nonZeroCoordinates.at<Point>(i).y >= maxY) maxY =  nonZeroCoordinates.at<Point>(i).y;
+            }
+            
+            rectangle(imageSP, Rect(minX,minY,maxX-minX, maxY-minY), Scalar(0,0,0), -1, 8, 0 );
+            
+            //vecinos
+            Mat mask = getMaskNeigbours(id);
+            findNonZero( mask, nonZeroCoordinates);
+            
+            double minXn=imageSP.cols, minYn=imageSP.rows, maxXn=0.0,maxYn=0.0;
+            
+            for (int i = 0; i < nonZeroCoordinates.total(); i++ )
+            {
+                if (nonZeroCoordinates.at<Point>(i).x <= minXn) minXn = nonZeroCoordinates.at<Point>(i).x;
+                else if (nonZeroCoordinates.at<Point>(i).x >= maxXn) maxXn =  nonZeroCoordinates.at<Point>(i).x;
+                
+                if (nonZeroCoordinates.at<Point>(i).y <= minYn) minYn = nonZeroCoordinates.at<Point>(i).y;
+                else if (nonZeroCoordinates.at<Point>(i).y >= maxYn) maxYn =  nonZeroCoordinates.at<Point>(i).y;
+            }
+            
+            Mat roi = imageSP(Rect(minXn,minYn,maxXn-minXn, maxYn-minYn)).clone();
+           // imshow("roi",roi);waitKey(0);
+            
+            des=_arraySP[id].descriptorsCONLAB(roi,7,7).clone();
         }
         
         if (mRGB != 0)
         {
             clock_t start = clock();
             if (des.rows != 0)
-                hconcat(_arraySP[i].descriptorsRGB(image,NBINS_RGB), des,des);
+                hconcat(_arraySP[id].descriptorsRGB(image,NBINS_RGB), des,des);
             else
-                des=_arraySP[i].descriptorsRGB(image,NBINS_RGB).clone();
+                des=_arraySP[id].descriptorsRGB(image,NBINS_RGB).clone();
             timeRGB += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
         }
         
         if (mPEAKS != 0)
         {
             if (des.rows != 0)
-                hconcat(_arraySP[i].descriptorsPEAKS(image,NBINS_PEAKS), des,des);
+                hconcat(_arraySP[id].descriptorsPEAKS(image,NBINS_PEAKS), des,des);
             else
-                des=_arraySP[i].descriptorsPEAKS(image,NBINS_PEAKS).clone();
+                des=_arraySP[id].descriptorsPEAKS(image,NBINS_PEAKS).clone();
         }
         
         if (mEDGES != 0)
         {
             clock_t start = clock();
             if (des.rows != 0)
-                hconcat(_arraySP[i].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES), des,des);
+                hconcat(_arraySP[id].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES), des,des);
             else
-                des=_arraySP[i].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES).clone();
+                des=_arraySP[id].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES).clone();
             timeEDGES += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
         }
         if (mEDDIR != 0)
         {
             clock_t start = clock();
             if (des.rows != 0)
-                hconcat(_arraySP[i].descriptorsEDGESDIR(edges,edgesDIR,NBINS_EDDIR), des,des);
+                hconcat(_arraySP[id].descriptorsEDGESDIR(edges,edgesDIR,NBINS_EDDIR), des,des);
             else
-                des=_arraySP[i].descriptorsEDGESDIR(edges,edgesDIR,NBINS_EDDIR).clone();
+                des=_arraySP[id].descriptorsEDGESDIR(edges,edgesDIR,NBINS_EDDIR).clone();
             timeEDGESDIR += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
         }
         
@@ -767,36 +829,36 @@ public:
         if (mSEMANTIC != 0)
         {
             if (des.rows != 0)
-                hconcat(_arraySP[i].descriptorsSEMANTIC(SEMANTIC_LABELS),des,des);
+                hconcat(_arraySP[id].descriptorsSEMANTIC(SEMANTIC_LABELS),des,des);
             else
-                des=_arraySP[i].descriptorsSEMANTIC(SEMANTIC_LABELS).clone();
+                des=_arraySP[id].descriptorsSEMANTIC(SEMANTIC_LABELS).clone();
             
         }
         
         if (mCONTEXT != 0)
         {
             if (des.rows != 0)
-                hconcat(_arraySP[i].descriptorsCONTEXT(CONTEXT_LABELS),des,des);
+                hconcat(_arraySP[id].descriptorsCONTEXT(CONTEXT_LABELS),des,des);
             else
-                des=_arraySP[i].descriptorsCONTEXT(CONTEXT_LABELS).clone();
+                des=_arraySP[id].descriptorsCONTEXT(CONTEXT_LABELS).clone();
             
         }
         
         if (mCONTEXT2 != 0)
         {
             if (des.rows != 0)
-                hconcat(_arraySP[i].descriptorsCONTEXT_ORIENTED(CONTEXT2_LABELS),des,des);
+                hconcat(_arraySP[id].descriptorsCONTEXT_ORIENTED(CONTEXT2_LABELS),des,des);
             else
-                des=_arraySP[i].descriptorsCONTEXT_ORIENTED(CONTEXT2_LABELS).clone();
+                des=_arraySP[id].descriptorsCONTEXT_ORIENTED(CONTEXT2_LABELS).clone();
                     
         }
         
         if (mGLOBAL != 0)
         {
             if (des.rows != 0)
-                hconcat(_arraySP[i].descriptorsCONTEXT_GLOBAL(GLOBAL_LABELS),des,des);
+                hconcat(_arraySP[id].descriptorsCONTEXT_GLOBAL(GLOBAL_LABELS),des,des);
             else
-                des=_arraySP[i].descriptorsCONTEXT_GLOBAL(GLOBAL_LABELS).clone();
+                des=_arraySP[id].descriptorsCONTEXT_GLOBAL(GLOBAL_LABELS).clone();
             
         }
 
