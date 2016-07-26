@@ -14,7 +14,7 @@
 #include "caffe/net.hpp"
 #include "caffe/proto/caffe.pb.h"
 #include "caffe/util/db.hpp"
-#include "caffe/util/format.hpp"
+//#include "caffe/util/format.hpp"
 #include "caffe/util/io.hpp"
 
 #include "opencv2/core/core.hpp"
@@ -69,6 +69,14 @@ public:
            delete net;
     }
     
+    bool loadedNet()
+    {
+        if (net != NULL)
+            return true;
+        else
+            return false;
+    }
+    
     
     Mat features(Mat img, string layer)
     {
@@ -78,6 +86,7 @@ public:
         int channels = net->blobs()[0]->shape(1);
         int width = net->blobs()[0]->shape(2);
         int height = net->blobs()[0]->shape(3);
+        
         //reshape img
         if (img.cols != width || img.rows != height)
         {
@@ -176,6 +185,67 @@ public:
         new_mat.release();
         return mean;
         
+    }
+    
+    Mat segmentation(Mat img)
+    {
+       
+        clock_t start = clock();
+        Mat new_mat;
+        
+        int num = net->blobs()[0]->shape(0); //1
+        int channels = net->blobs()[0]->shape(1); //3
+        int height = net->blobs()[0]->shape(2); //360
+        int width = net->blobs()[0]->shape(3); //480
+        
+        //reshape img
+        if (img.cols != width || img.rows != height)
+        {
+            resize(img, new_mat, Size(width,height),0,0,CV_INTER_LINEAR);
+        }else
+            new_mat = img.clone();
+        
+        //printf("RESIZE SEGNET TEXT: %f seconds\n",(float) (((double)(clock() - start)) / CLOCKS_PER_SEC));
+        
+       // printf(" CAFFE num %d channels %d w %d h %d  image: (rows) %d (cols) %d\n",num,channels,width, height,new_mat.rows,new_mat.cols);
+        // convert the image to a caffe::Blob
+        caffe::Blob<float> * blob = new caffe::Blob<float>(num, channels, height,width);
+        for (int c = 0; c < 3; ++c) {
+            for (int h = 0; h < new_mat.rows; ++h) {
+                for (int w = 0; w < new_mat.cols; ++w) {
+                    blob->mutable_cpu_data()[blob->offset(0, c, h,w)] = new_mat.at<cv::Vec3b>(h, w)[c];
+                }
+            }
+        }
+        
+        //printf("INPUT SEGNET TEXT: %f seconds\n",(float) (((double)(clock() - start)) / CLOCKS_PER_SEC));
+        // printf(" CAFFE num %d channels %d w %d h %d  image: h(rows) %d w(cols) %d\n",num,channels,width, height,new_mat.rows,new_mat.cols);
+        
+        // create input and output vectors for the Forward call
+        vector<caffe::Blob<float>*> bottom_vecs;
+        vector<caffe::Blob<float>*> top_vecs;
+        bottom_vecs.push_back(blob);
+        
+        //solve net
+        top_vecs = net->Forward(bottom_vecs);
+        printf("SOLVE SEGNET TEXT: %f seconds\n",(float) (((double)(clock() - start)) / CLOCKS_PER_SEC));
+        
+        //OBTAIN MAT
+        Mat out = Mat::zeros( top_vecs[0]->shape(2),top_vecs[0]->shape(3), CV_8UC1);
+
+       // for (int c = 0; c < out->channels(); ++c) { //TODO! en este ejemplo da igual el channel!!!!!!! OJO!!!!!
+            for (int r = 0; r < out.rows; r++) {
+                for (int c = 0; c < out.cols; c++) {
+                    out.at<uchar>(r,c) = (uchar)top_vecs[0]->data_at(0, 0, r, c); //i++;
+                    
+                }
+            }
+        //}*/
+        new_mat.release();
+        
+        //printf("TIME SEGNET TEXT: %f seconds\n",(float) (((double)(clock() - start)) / CLOCKS_PER_SEC));
+        
+        return out*255;
     }
 };
 

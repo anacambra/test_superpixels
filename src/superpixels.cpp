@@ -13,13 +13,16 @@
 using namespace cv;
 
 #include "superpixel.cpp"
-//#include "labelSet.cpp"
+#include "Descriptors.cpp"
 
 #include <time.h>
 
 //vlfeat
+#if VLFEAT
+#define VLFEAT
 #include "vl/generic.h"
 #include "vl/slic.h"
+#endif
 
 #include <opencv2/ml/ml.hpp>
 
@@ -31,6 +34,9 @@ using namespace cv;
 #include "lib_slic/SLIC.h"
 
 #define PI 3.1416
+#define SP_MASK 1
+#define BB_SP_MASK 0
+#define BB_NEIG_MASK 2
 
 
 using namespace std;
@@ -86,10 +92,66 @@ public:
         //delete _caffe;
     }
     
-    /*void initCaffe(string model, string proto)
+    static Rect boundingbox(Mat image)
     {
-         _caffe = new utilsCaffe(model,proto);
-    }*/
+        Mat nonZeroCoordinates;
+        
+        if (countNonZero(image) == 0)
+            return Rect(0,0,0,0);
+        
+        
+        findNonZero( image, nonZeroCoordinates);
+        double minX=image.cols+1, minY=image.rows+1, maxX=-1,maxY=-1;
+        
+        for (int i = 0; i < nonZeroCoordinates.total(); i++ )
+        {
+            if (nonZeroCoordinates.at<Point>(i).x <= minX) minX = nonZeroCoordinates.at<Point>(i).x;
+            else if (nonZeroCoordinates.at<Point>(i).x >= maxX) maxX =  nonZeroCoordinates.at<Point>(i).x;
+            
+            if (nonZeroCoordinates.at<Point>(i).y <= minY) minY = nonZeroCoordinates.at<Point>(i).y;
+            else if (nonZeroCoordinates.at<Point>(i).y >= maxY) maxY =  nonZeroCoordinates.at<Point>(i).y;
+        }
+        
+        
+        return Rect(minX,minY,(maxX-minX)+1, (maxY-minY)+1);
+    }
+    
+    Mat getMask(int id)
+    {
+        return _arraySP[id].getMask();
+    }
+    
+    Mat getMaskBB(int id)
+    {
+        Mat mask =_arraySP[id].getMask().clone();
+        rectangle(mask,boundingbox(mask), 255,-1,CV_AA,0);
+        return mask;
+    }
+    
+    Mat getMaskNeigboursBB(int id)
+    {
+        set<int> neig = _arraySP[id].getFirstNeighbours();
+        
+        std::set<int>::iterator it;
+        
+        Mat maskN = Mat::zeros(_image.rows,_image.cols, CV_8UC1);
+        for (it=neig.begin(); it!=neig.end(); ++it)
+        {
+           //concat mask
+            bitwise_or(maskN, _arraySP[*it].getMask(),maskN);
+        }
+        
+        //paint white BB neigbours
+        rectangle(maskN,boundingbox(maskN), 255,-1,CV_AA,0);
+        
+        //paint black superpixel
+        Mat maskID= getMaskBB(id);
+        
+        Mat mask;
+        bitwise_xor(maskN,maskID,maskN);
+
+        return maskN.clone();
+    }
     
     void activeDEBUG(){ _DEBUG = 1;}
     void desactiveDEBUG(){ _DEBUG = 0;}
@@ -114,7 +176,7 @@ public:
             //concat mask
             bitwise_or(maskN, _arraySP[*it].getMask(),maskN);
         }
-        
+    
         return maskN;
         
     }
@@ -223,6 +285,9 @@ public:
         Mat im =image.clone();
        // Scalar* color = new cv::Scalar( 0, 0, 255 );
         im.setTo(*color,_arraySP[id].getMask());
+        /*imshow("mask",this->getMask(id));
+        waitKey(0);
+        destroyAllWindows();*/
         delete color;
         return im;
     }//paintSuperpixel
@@ -317,6 +382,8 @@ public:
         delete(labels);
         
     }
+
+#if VLFEAT
     void calculateSLICSuperpixelsVLFEAT(Mat mat){
         // The matrix 'mat' will have 3 8 bit channels
         // corresponding to BGR color space.
@@ -419,7 +486,7 @@ public:
         }//for
         
     }//calculateSLICSuperpixels
-    
+#endif    
     
     /*************************************************************************************
      * superpixels2file
@@ -560,8 +627,7 @@ public:
         
         if (_ids.data != NULL )
         {
-            //for(int i=0; i<=maxID; i++ )
-            for(int i=maxID; i>=0; --i )
+            for(int i=0; i<=maxID; i++ )
             {
                 Mat mask_sp;
                 mask_sp = (_ids == i);
@@ -651,180 +717,170 @@ public:
     
     //////////
     
-    Mat cropSuperpixel(Mat img, int id, float scale = 1)
+    Mat cropSuperpixel(Mat img, int id, float scale = 1, int maskON = 1)
     {
-        //img is BGR
-        Mat nonZeroCoordinates;
-        findNonZero( _arraySP[id].getMask(), nonZeroCoordinates);
+        //1 mask superpixel
+        // 0 BB superpixel
+        //2 BB N without BB superpixel
         
-        double minX=img.cols, minY=img.rows, maxX=0.0,maxY=0.0;
-
-        for (int i = 0; i < nonZeroCoordinates.total(); i++ )
+        if (maskON != BB_NEIG_MASK)
         {
-            if (nonZeroCoordinates.at<Point>(i).x <= minX) minX = nonZeroCoordinates.at<Point>(i).x;
-            else if (nonZeroCoordinates.at<Point>(i).x >= maxX) maxX =  nonZeroCoordinates.at<Point>(i).x;
+            Mat roi = img(boundingbox(getMask(id))).clone();
+            Size s = roi.size();
+            if (maskON == SP_MASK)
+            {
+                Mat mask =_arraySP[id].getMask();
+                Mat roiMask = mask(boundingbox(getMask(id))).clone(); //0...255
+                cvtColor(roiMask,roiMask,CV_GRAY2BGR);
+                
+                if (roi.type() != roiMask.type())
+                    roi.convertTo(roi, roiMask.type(),255.0,0);
+                
+                bitwise_and(roi,roiMask, roi);
+            }
             
-            if (nonZeroCoordinates.at<Point>(i).y <= minY) minY = nonZeroCoordinates.at<Point>(i).y;
-            else if (nonZeroCoordinates.at<Point>(i).y >= maxY) maxY =  nonZeroCoordinates.at<Point>(i).y;
+            resize(roi, roi, Size(s.width*scale,s.height*scale));
+            
+            return roi;
+        }else //BB_SP_MASK
+        {
+            Mat roi = img.clone();
+            rectangle(roi,boundingbox(getMask(id)),Scalar(0,0,0),-1,CV_AA,0);
+            //imshow("roi",roi);
+            
+            Mat roiMask = roi(boundingbox(getMaskNeigboursBB(id))).clone();
+            Size s = roiMask.size();
+            resize(roiMask, roiMask, Size(s.width*scale,s.height*scale));
+            
+            return roiMask;
         }
-        
-       /* Mat out;
-        img.copyTo(out);
-        Scalar color = Scalar( 255, 0, 0 );
-        rectangle( out, Point(minX,minY), Point(maxX,maxY), color, -1, 8, 0);
-
-        imshow("REC",out);//*/
-        //return out;
-        //*/
-        
-        Mat roi = img(Rect(minX,minY,maxX-minX, maxY-minY)).clone();
-        Mat mask =_arraySP[id].getMask();
-        Mat roiMask = mask(Rect(minX,minY,maxX-minX, maxY-minY)).clone(); //0...255
-        cvtColor(roiMask,roiMask,CV_GRAY2BGR);
-        Size s = roi.size();
-        
-        if (roi.type() != roiMask.type())
-            roi.convertTo(roi, roiMask.type(),255.0,0);
-        
-        bitwise_and(roi,roiMask, roi);
-        
-        resize(roi, roi, Size(s.height*scale,s.height*scale));
-
-        return roi;//*/
-        
     }//cropSuperpixel
     
 
     /////////////
     Mat calculateDescriptors(int id, Mat image,
-                              int mLAB   = 0, int NBINS_L     = 50, int NBINS_AB=128,
-                              int mRGB   = 0, int NBINS_RGB   = 256,
-                              int mPEAKS = 0, int NBINS_PEAKS = 64,
-                              int mEDGES = 0, int NBINS_EDGES = 100, int modeEDGES = 2, Mat edges = Mat::zeros(1,1,CV_32FC3),
-                              int mEDDIR = 0, int NBINS_EDDIR = 8, Mat edgesDIR = Mat::zeros(1,1,CV_32FC3),
-                              int mCAFFE = 0, string CAFFE_LAYER = "fc7", int NUMCAFFE = 4096,
-                              int mSEMANTIC = 0, int SEMANTIC_LABELS = 60,
-                              int mCONTEXT = 0, int CONTEXT_LABELS = 60,
-                              int mCONTEXT2 = 0, int CONTEXT2_LABELS = 60,
-                              int mGLOBAL = 0, int GLOBAL_LABELS = 60,
-                              int mCONLAB = 0)
+                             int mLAB   = 0, int NBINS_L     = 7, int NBINS_AB=7,
+                             int mRGB   = 0, int NBINS_RGB   = 256,
+                             int mPEAKS = 0, int NBINS_PEAKS = 64,
+                             int mEDGES = 0, int NBINS_EDGES = 8, int modeEDGES = 0, Mat edges = Mat::zeros(1,1,CV_32FC3),
+                             int mEDDIR = 0, int NBINS_EDDIR = 8, Mat edgesDIR = Mat::zeros(1,1,CV_32FC3),
+                             int mCAFFE = 0, string CAFFE_LAYER = "fc7", int NUMCAFFE = 4096,
+                             int mSEMANTIC = 0, int SEMANTIC_LABELS = 60,
+                             int mCONTEXT = 0, int CONTEXT_LABELS = 60,
+                             int mCONTEXT2 = 0, int CONTEXT2_LABELS = 60,
+                             int mGLOBAL = 0, int GLOBAL_LABELS = 60,
+                             int mCONLAB = 0,
+                             int mCONEDGES = 0,
+                             int mCONEDDIR = 0,
+                             int mHOG =0,   int mCONHOG = 0)
     {
         Mat des;
         
         if (mLAB != 0)
         {
-            clock_t start = clock();
-            des=_arraySP[id].descriptorsLAB(image,NBINS_L,NBINS_AB).clone();
-            timeLAB += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
-            
+            Mat imageSP = cropSuperpixel(image,id,1,BB_SP_MASK).clone();
+            des=Descriptors::descriptorsLAB(imageSP,Mat(),NBINS_L,NBINS_AB).clone();
         }
         
         if (mCONLAB != 0)
         {
-            Mat imageSP = image.clone();
-            Mat maskID = _arraySP[id].getMask().clone();//mask sp black
             
-            Mat nonZeroCoordinates;
-            findNonZero( maskID, nonZeroCoordinates);
+            if (des.rows != 0)
+                hconcat(Descriptors::descriptorsLAB(image,getMaskNeigboursBB(id),NBINS_L,NBINS_AB), des,des);
+            else
+                des=Descriptors::descriptorsLAB(image,getMaskNeigboursBB(id),NBINS_L,NBINS_AB).clone();
             
-            double minX=imageSP.cols, minY=imageSP.rows, maxX=0.0,maxY=0.0;
-            
-            for (int i = 0; i < nonZeroCoordinates.total(); i++ )
-            {
-                if (nonZeroCoordinates.at<Point>(i).x <= minX) minX = nonZeroCoordinates.at<Point>(i).x;
-                else if (nonZeroCoordinates.at<Point>(i).x >= maxX) maxX =  nonZeroCoordinates.at<Point>(i).x;
-                
-                if (nonZeroCoordinates.at<Point>(i).y <= minY) minY = nonZeroCoordinates.at<Point>(i).y;
-                else if (nonZeroCoordinates.at<Point>(i).y >= maxY) maxY =  nonZeroCoordinates.at<Point>(i).y;
-            }
-            
-            rectangle(imageSP, Rect(minX,minY,maxX-minX, maxY-minY), Scalar(0,0,0), -1, 8, 0 );
-            
-            //vecinos
-            Mat mask = getMaskNeigbours(id);
-            findNonZero( mask, nonZeroCoordinates);
-            
-            double minXn=imageSP.cols, minYn=imageSP.rows, maxXn=0.0,maxYn=0.0;
-            
-            for (int i = 0; i < nonZeroCoordinates.total(); i++ )
-            {
-                if (nonZeroCoordinates.at<Point>(i).x <= minXn) minXn = nonZeroCoordinates.at<Point>(i).x;
-                else if (nonZeroCoordinates.at<Point>(i).x >= maxXn) maxXn =  nonZeroCoordinates.at<Point>(i).x;
-                
-                if (nonZeroCoordinates.at<Point>(i).y <= minYn) minYn = nonZeroCoordinates.at<Point>(i).y;
-                else if (nonZeroCoordinates.at<Point>(i).y >= maxYn) maxYn =  nonZeroCoordinates.at<Point>(i).y;
-            }
-            
-            Mat roi = imageSP(Rect(minXn,minYn,maxXn-minXn, maxYn-minYn)).clone();
-           // imshow("roi",roi);waitKey(0);
-            
-            des=_arraySP[id].descriptorsCONLAB(roi,7,7).clone();
         }
         
         if (mRGB != 0)
         {
-            clock_t start = clock();
             if (des.rows != 0)
-                hconcat(_arraySP[id].descriptorsRGB(image,NBINS_RGB), des,des);
+                hconcat(Descriptors::descriptorsRGB(image,getMask(id),NBINS_RGB), des,des);
             else
-                des=_arraySP[id].descriptorsRGB(image,NBINS_RGB).clone();
-            timeRGB += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
+                des=Descriptors::descriptorsRGB(image,getMask(id),NBINS_RGB).clone();
         }
         
         if (mPEAKS != 0)
         {
             if (des.rows != 0)
-                hconcat(_arraySP[id].descriptorsPEAKS(image,NBINS_PEAKS), des,des);
+                hconcat(Descriptors::descriptorsPEAKS(image,getMask(id),NBINS_PEAKS), des,des);
             else
-                des=_arraySP[id].descriptorsPEAKS(image,NBINS_PEAKS).clone();
+                des=Descriptors::descriptorsPEAKS(image,getMask(id),NBINS_PEAKS).clone();
         }
         
         if (mEDGES != 0)
         {
             clock_t start = clock();
+            
             if (des.rows != 0)
-                hconcat(_arraySP[id].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES), des,des);
+            {
+                Mat imageSP = cropSuperpixel(edges,id,1,BB_SP_MASK).clone();
+                hconcat(Descriptors::descriptorsEDGES(imageSP,Mat(),NBINS_EDGES,modeEDGES), des,des);
+            }
             else
-                des=_arraySP[id].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES).clone();
+            {
+                Mat imageSP = cropSuperpixel(edges,id,1,BB_SP_MASK).clone();
+                des=Descriptors::descriptorsEDGES(imageSP,Mat(),NBINS_EDGES,modeEDGES);
+                //_arraySP[id].descriptorsEDGES(edges,NBINS_EDGES,modeEDGES).clone();
+            }
             timeEDGES += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
         }
+        
+        if (mCONEDGES != 0)
+        {
+            
+            if (des.rows != 0)
+            {
+                hconcat(Descriptors::descriptorsEDGES(edges,getMaskNeigboursBB(id),NBINS_EDGES,modeEDGES), des,des);
+            }
+            else
+            {
+                des=Descriptors::descriptorsEDGES(edges,getMaskNeigboursBB(id),NBINS_EDGES,modeEDGES);
+            }
+        }
+
+        
         if (mEDDIR != 0)
         {
             clock_t start = clock();
             if (des.rows != 0)
-                hconcat(_arraySP[id].descriptorsEDGESDIR(edges,edgesDIR,NBINS_EDDIR), des,des);
+                hconcat(Descriptors::descriptorsEDGESDIR(edges,edgesDIR,getMaskBB(id),NBINS_EDDIR), des,des);
             else
-                des=_arraySP[id].descriptorsEDGESDIR(edges,edgesDIR,NBINS_EDDIR).clone();
+                des=Descriptors::descriptorsEDGESDIR(edges,edgesDIR,getMaskBB(id),NBINS_EDDIR).clone();
             timeEDGESDIR += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
         }
         
-       /* if (mCAFFE != 0)
+        if (mCONEDDIR != 0)
         {
             clock_t start = clock();
-            Mat imageSP = cropSuperpixel(image,i,1).clone();
-            
-            Mat desCaf= _caffe->features(imageSP, "fc7").clone();
-            normalize(desCaf, desCaf);*/
-            
-           /* double min, max;
-            minMaxLoc(desCaf, &min, &max);
-            Scalar     mean, stddev;
-            meanStdDev ( desCaf, mean, stddev );
-            
-            printf("Caffe des %d values[%f,%f] mean %f stdDev %f \n",i, min, max,mean.val[0],stddev.val[0]);*/
-            
-            /*if (des.rows != 0)
-                hconcat(desCaf,des,des);//_arraySP[i].descriptorsCAFFE(imageSP,CAFFE_LAYER,NUMCAFFE), des,des);
+            if (des.rows != 0)
+                hconcat(Descriptors::descriptorsEDGESDIR(edges,edgesDIR,getMaskNeigboursBB(id),NBINS_EDDIR), des,des);
             else
-                des=desCaf.clone();//_arraySP[i].descriptorsCAFFE(imageSP,CAFFE_LAYER,NUMCAFFE).clone();
+                des=Descriptors::descriptorsEDGESDIR(edges,edgesDIR,getMaskNeigboursBB(id),NBINS_EDDIR).clone();
+            timeEDGESDIR += (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
+        }
+        
+        //HOG
+        if (mHOG != 0)
+        {
+            //get image BB superpixel
+            Mat imageSP = cropSuperpixel(image,id,1,BB_SP_MASK).clone();
+           
+            if (des.rows != 0)
+                hconcat(Descriptors::DescriptorHOG(imageSP), des,des);
+            else
+                des=Descriptors::DescriptorHOG(imageSP).clone();
             
-            //printf("Descriptors Caffe %d\n",i);
-            timeCAFFE = (float) (((double)(clock() - start)) / CLOCKS_PER_SEC);
+        }
+        if (mCONHOG != 0)
+        {
+            Mat imageSP = cropSuperpixel(image,id,1,BB_NEIG_MASK).clone();
             
-            imageSP.release();
-            desCaf.release();
-            
-        }*/
+            if (des.rows != 0)
+                hconcat(Descriptors::DescriptorHOG(imageSP), des,des);
+            else
+                des=Descriptors::DescriptorHOG(imageSP).clone();
+        }
         
         if (mSEMANTIC != 0)
         {
@@ -862,11 +918,7 @@ public:
             
         }
 
-        /*for (int i=0; i< des.cols; i++) {
-         printf("%d %f\n",i,des.at<float>(i));
-         }//*/
-
-        return des;
+        return des.clone();
     }
     
     /*************************************************************************************
@@ -878,6 +930,11 @@ public:
         //read image
         try{
             _labelsInput = imread(path,CV_LOAD_IMAGE_UNCHANGED);
+            
+            
+             printf("Image Labeling not zero %d\n",countNonZero(_labelsInput));
+           
+            
             _labelsInput = (_labelsInput * (NUMLABELS - 1)/ 255) ;
             
             if (_labelsInput.rows != _image.rows || _labelsInput.cols != _image.cols)
@@ -905,13 +962,18 @@ public:
         //Mat im;
         for (int id=0; id < maxID+1; id++)
         {
+            
             int l = _arraySP[id].create_labelHist(_labelsInput,NUMLABELS,mode);
             _labels.setTo(l,_arraySP[id].getMask());
+            printf("id %d label: %d\n",id,l);
         }
 
         //paint
         labelSet val(NUMLABELS);
         Mat leyend= Mat::ones(_image.rows,_image.cols, CV_8UC3);
+        
+        imshow("leyend",leyend);
+        waitKey(0);
         //Mat out = val.paintLabelRandom(_labels,NUMLABELS,&leyend);
         
         leyend.release();
@@ -976,7 +1038,7 @@ public:
         
         for (int id=0; id < maxID+1; id++)
         {
-            int l =  _arraySP[id].create_labelSegmentation(seg,numLabels,mode);
+            int l =  _arraySP[id].create_labelSegmentation(seg,numLabels,mode,getMaskBB(id));
             im.setTo(l,_arraySP[id].getMask());
             //printf("LABEL: %d %s \n",l,val.getLabel(l).c_str());getchar();
         }
@@ -1028,7 +1090,7 @@ public:
             newLabels.setTo(ln,_arraySP[id1].getMask());
             
             //create oriented semantic label segmentation
-            _arraySP[id1].create_labelOriented(seg,numLabels,maskN);
+            _arraySP[id1].create_labelOriented(seg,numLabels,getMaskNeigboursBB(id1));
            //  _arraySP[id1].create_labelOrientedGlobal(seg,numLabels);
 
         }
