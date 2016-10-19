@@ -82,7 +82,6 @@ public:
             _labels = text;
         else if (NUMLABELS == SEGNET)
             _labels = segnet;
-        
     };
     
     ~labelSet(){ // delete[] _labels;

@@ -583,20 +583,28 @@ float cmpImage(string image, string gt, float* precision, float *recall)
     vector<Mat> bgr;
     split(img,bgr);
     
-    Mat mask=(bgr[0] == 0);
+    Mat mask=(bgr[0] == 0); //when resul is in red
+   // Mat mask=(bgr[2] == 0); //whrn resul is in blue
     Mat resul=(bgr[1] == 0);
     
     bitwise_and(mask, resul, resul);
-    mask = (bgr[2] == 255);
+   
+    mask = (bgr[2] == 255); printf("CHECK resul IN RED!!!!!!!!!!"); //getchar();
+   // mask = (bgr[0] == 255); printf("result IN BLUE!!!!!!!!!!");
+
     bitwise_and(resul, mask, resul);
     
+    //cvtColor(img,resul,CV_RGB2GRAY);
     
     //imshow("out",resul);
     
     Mat imgGT = imread(gt,CV_LOAD_IMAGE_GRAYSCALE);
+   // printf("gt; %s\n",gt.c_str());
     //imshow("gt",imgGT);waitKey(0);
     
-    Mat imgTP,imgFP,imgFN;
+    if (imgGT.data == NULL) return -1;
+    
+    Mat imgTP,imgFP,imgFN,imgTN;
     
     if (imgGT.rows != resul.rows || imgGT.cols != resul.rows)
        resize(imgGT, imgGT, resul.size());
@@ -617,6 +625,13 @@ float cmpImage(string image, string gt, float* precision, float *recall)
     int tp = countNonZero(imgTP);
     int tpfp = countNonZero(imgTP) + countNonZero(imgFP);
     int tpfn = countNonZero(imgTP) + countNonZero(imgFN);
+    
+    
+    bitwise_and(notresul,notGT,imgTN);
+    int tn = countNonZero(imgTN);
+    int tptnfpfn = countNonZero(imgTP) + countNonZero(imgTN) + countNonZero(imgFN)  + countNonZero(imgFP);
+    
+    printf("%-20f",(float)(tp + tn)/(float)tptnfpfn);
     
     (*precision) = (float)tp / (float)tpfp;
     (*recall) = (float)tp / (float)tpfn ;
@@ -691,7 +706,7 @@ void parseTXT(string name, string out, string dir_gt,string dir_out)
              pos1=line3.find("/out/") + strlen("/out/");
             //pos1=line3.find("all_BB_response0/out/") + strlen("all_BB_response0/out/");
             //pos2=line3.find(".png__"); //cropped
-            pos2=line3.find(".jpg");
+            pos2=line3.find(".jpg");// pos2=line3.find(".jpg");
             string file = line3.substr(pos1,(pos2-pos1));
             
             float precision,precisionBB=0.0;
@@ -700,8 +715,10 @@ void parseTXT(string name, string out, string dir_gt,string dir_out)
             string resul = dir_out + string(imgFile);
             //string gt = "/Users/acambra/TESIS/datasets/svt1/train/gt/gt_" + file + ".png";
             string gt = dir_gt + file + ".png";
-            percentage = cmpImage(resul, gt, &precision, &recall);
             
+            printf("Accuracy_%-40s ",line2);
+            percentage = cmpImage(resul, gt, &precision, &recall);
+            printf("%-40s\n",file.c_str());//getchar();
             //string gtTXT = "/Users/acambra/TESIS/datasets/svt1/train/gt/gt_" + file + ".txt";
             string gtTXT = dir_gt + file + ".txt";
             //cmpImageTXT(gtTXT,resul, &precisionBB, &recallBB);
@@ -743,7 +760,7 @@ void parseDIR(string dir,string folder,string out)
                 pos2=i->path().filename().string().find(".jpg");//find("_SegNet");
                 
                 string file = i->path().filename().string().substr(pos1,(pos2-pos1));
-                string gt =  dir + "/gt/gt_" + file + ".png";
+                string gt = dir + "/gt/" + file ; //dir + "/gt/gt_" + file + ".png";
                 
                // gt.replace(gt.find(".jpg"), sizeof(".jpg")-1, ".png");
                 
@@ -811,17 +828,30 @@ int main(int argc, const char * argv[]) {
                 &precision,&recall);
     
     return 0;//*/
-    
-    //parseDIR("/Users/acambra/SegNet/SegNet_text/ICDAR/test","train_svt1_iter_60000","/Users/acambra/SegNet/SegNet_text/ICDAR/test/test_SegNet_svt1_60000_2.txt");
-    /*parseDIR("/Users/acambra/TESIS/datasets/Pascal_context/test",
-             "doors_iter_60000",
-             "/Users/acambra/TESIS/datasets/Pascal_context/test/test_SegNet_doors.txt");
+
+    /*parseDIR("/Users/acambra/TESIS/datasets/LabelME/test",
+             "train_water_pavement_ite_60000",
+             "/Users/acambra/TESIS/datasets/LabelME/resul_water_pavement_ite_60000.txt"//*/
+             //"/Users/acambra/TESIS/datasets/KittyLayout/pavement/test",
+             /*"train_water_LabelME_iter_30000",
+             "/Users/acambra/TESIS/datasets/KittyLayout/pavement/resul_test_water_LabelME_iter_30000.txt"*/
+            /* );
     return 2;//*/
     
-    parseTXT("/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Release/stdout_doors_test_233_combined_response0_3.txt",
-             "/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Release/resul_doors_test_233_combined_response0_3.txt",
-             "/Users/acambra/TESIS/datasets/pascal_context/test/gt/gt_", "");
+
+    /*parseTXT("/Users/acambra/TESIS/datasets/svt1/stdout_svt1_color_edges_caffe.txt",
+             "/Users/acambra/TESIS/datasets/svt1/resul_svt1_color_edges_caffe.txt",
+             "/Users/acambra/TESIS/datasets/svt1/test/gt/gt_", "");
     return 1;//*/
+    
+   /* float precision,recall,percentage; //prove cmpImages works correctly Precision 1 Recall 1 %0.007262
+    percentage = cmpImage("/Users/acambra/TESIS/datasets/submarinas_5/test/gt/22_dive5_2014-09-29.png",
+                          "/Users/acambra/TESIS/datasets/submarinas_5/test/gt/22_dive5_2014-09-29.png", &precision, &recall);
+
+    printf("%-20f%-20f%-20f\n",percentage,precision,recall);
+    return 3;*/
+    
+    
    /* parseTXT("/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Release/stdout_svt1_test_low_response0_2.txt",
      "/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Release/resul_svt1_test_low_response0_2.txt",
      "/Users/acambra/TESIS/datasets/svt1/test/gt/gt_", "");
@@ -1088,9 +1118,36 @@ int main(int argc, const char * argv[]) {
             printf("Error dirout not found!\n");
             return -1;
         }
+        /*********/ //KNN
+        CvKNearest *knn;
+        
+        if (parameters["svmTest"].as<std::string>().find("KNN") != std::string::npos)
+        {
+            string filename= "/Users/acambra/TESIS/datasets/" + dataset + string("/train/svm_") + parameters["svmOptions"].as<std::string>() + string("_") + to_string(nSAMPLES) + string("_NOTZERO.xml_des.yaml");
+            
+            Mat trainingData,labels;
+            
+            printf("\n\t* KNN: Load training,labels files: %s\n\n", filename.c_str());
+            //read  trainingData, labels from file
+            FileStorage fs(filename, FileStorage::READ);
+            fs["trainingData"] >> trainingData;
+            fs["labels"] >> labels;
+            fs.release();
+            
+            knn = new KNearest(trainingData,labels);
+        }
+        
+        /*********/ //KNN
+        
+        clock_t timeSVM = clock();
+        clock_t timeIni;
+        float timeDescriptor=0.0;
+        float timeEval=0.0;
         
         CvSVM SVM;
         SVM.load(nameSVM2.c_str());
+        
+        printf("+++++ %f seconds loas svm\n",(float) (((double)(clock() - timeSVM)) / CLOCKS_PER_SEC));
         
         boost::filesystem::path inputImage(parameters["image"].as<std::string>());
         
@@ -1107,9 +1164,12 @@ int main(int argc, const char * argv[]) {
         
         SuperPixels *SPCTE;
         
+        timeIni = clock();
         SPCTE= svmSuperpixelsTEXT(nameImage,2,nameGT,nameSegmen);
+        printf("+++++ %f seconds slic superpixels svm\n",(float) (((double)(clock() - timeIni)) / CLOCKS_PER_SEC));
         
         Mat imgSP = SPCTE->getImage().clone();
+        Mat imgSP2 = SPCTE->getImage().clone();
         char k=-1;
         
         string nameWindow = "Superpixel ";
@@ -1121,7 +1181,7 @@ int main(int argc, const char * argv[]) {
         
         int numText=0;
         int numNOText=0;
-        clock_t start = clock();
+       
         
         if (parameters["svmOptions"].as<std::string>().find("_CONCAFFE2") != std::string::npos)
         {
@@ -1174,7 +1234,7 @@ int main(int argc, const char * argv[]) {
             nameEdgesDIR = parameters["eddir"].as<std::string>();
         
         
-        if  (!readDescriptor && (mCAFFE == 1 || mCONCAFFE == 1 || mCONCAFFE2 == 1))
+        if  (!readDescriptor && (mCAFFE == 1 || mCONCAFFE == 1 || mCONCAFFE2 == 1))//true)//
         {
             string model = "/Users/acambra/Dropbox/test_caffe/bvlc_reference_caffenet.caffemodel";
             string proto = "/Users/acambra/Dropbox/test_caffe/deploy.prototxt" ;
@@ -1231,6 +1291,8 @@ int main(int argc, const char * argv[]) {
         
         Mat desID,desF;
         
+         clock_t start = clock();
+        
         for (int id=0; id < SPCTE->maxID+1; id++)
         {
             if (DEBUG == 1) {
@@ -1263,7 +1325,10 @@ int main(int argc, const char * argv[]) {
                                            desCAFFE, desSEMANTIC, desCONTEXT,desCONTEXT2,desGLOBAL,desCONCAFFE,desCONCAFFE2,
                                            desHYBRIDCNN,desCONHYBRIDCNN);
             else //*/
+              //timeIni = clock();
                 desID = descriptorText(SPCTE, id, nameEdges, nameEdgesDIR, nameSegmen).clone();
+          /* printf("+++++ %f seconds descriptor 1 superpixel\n",(float) (((double)(clock() - timeIni)) / CLOCKS_PER_SEC));
+            timeDescriptor = timeDescriptor + (float) (((double)(clock() - timeIni)) / CLOCKS_PER_SEC);
 
         //check file and calculated
            /*for (int i=0; i<desID.cols; i++)
@@ -1278,10 +1343,30 @@ int main(int argc, const char * argv[]) {
             
             //evaluate SVM
             //float threshold = 0.5;
-            if (SVM.get_var_count() != 0)
+            
+            
+            /*********/ //KNN
+            
+            if (parameters["svmTest"].as<std::string>().find("KNN") != std::string::npos)
+            {
+                //evaluate knn
+                int found = knn->find_nearest(desID,1);
+                printf("nearest: %d \n",found);//getchar();
+                
+                if (found == (LABEL_TEXT))
+                {
+                    imgSP2 = SPCTE->paintSuperpixel(imgSP2, id,new Scalar(255,0,0)).clone();
+                    numText += SPCTE->numPixels(id);
+                }
+
+            }
+            else if (SVM.get_var_count() != 0)
             {
                 
+                timeIni = clock();
                     float response = SVM.predict(desID);
+                    printf("+++++ %f seconds eval 1 superpixel\n",(float) (((double)(clock() - timeIni)) / CLOCKS_PER_SEC));
+                timeEval = timeEval + (float) (((double)(clock() - timeIni)) / CLOCKS_PER_SEC);
                     printf("RESPONSE SVM id: %d  %f\n",id,response);
                     //paint image with SVM response
                     if (response == (LABEL_TEXT))
@@ -1296,17 +1381,17 @@ int main(int argc, const char * argv[]) {
                     else
                     {
                         response = SVM.predict(desID,true); //distance
-                       /* if (response <= 0.0)
+                        if (response <= 0.0)
                         {
                         //    imgSP_2 = SPCTE->paintSuperpixel(imgSP_2, id, new Scalar(0,255,0)).clone();
                             imgSP = SPCTE->paintSuperpixel(imgSP, id).clone();
                             if (DEBUG) printf("\t*** SVM response id: %d  TEXT????? (%f)\n",id,response);
                         }
                         else
-                        {*/
+                        {
                             numNOText += SPCTE->numPixels(id);
                             if (DEBUG) printf("\t*** SVM response id: %d  NO TEXT (%f)\n",id,response);
-                       // }
+                        }
                             
                     }
                // }
@@ -1353,6 +1438,7 @@ int main(int argc, const char * argv[]) {
         if (DEBUG == 1)
         {
             imshow(nameSVM,imgSP);
+           // imshow("KNN",imgSP2);
            // imshow("0.5 distance from border SVM",imgSP_2);
             waitKey(0);
         }
@@ -1360,7 +1446,11 @@ int main(int argc, const char * argv[]) {
             
             size_t found1 = nameImage.find_last_of("/");
             string name = dir_out + "out/"+ nameImage.substr(found1+1) + "_" + parameters["svmOptions"].as<std::string>()+ "_" + to_string(nSAMPLES)+ svmType +".png";
-            imwrite(name,imgSP);
+            
+            if (svmType.find("KNN")!=std::string::npos)
+                imwrite(name,imgSP2);
+            else
+                imwrite(name,imgSP);
             printf("\n\t* SVM solution saved: %s\n",name.c_str());
         }
         
@@ -1368,6 +1458,9 @@ int main(int argc, const char * argv[]) {
         delete SPCTE;
         
         printf("===================================================================\n");
+        
+        printf("+++++ %f seconds descriptors\n",timeDescriptor);
+        printf("+++++ %f seconds eval\n",timeEval);
         
     }//svmTest
 }
@@ -1657,7 +1750,6 @@ Mat descriptorText(SuperPixels *SPCTE, int id, string nameEdges,string nameEdges
     }
 
     
-    
     SPCTE->calculateDescriptors(id,SPCTE->getImage() \
                                           ,mLAB,NBINS_L,NBINS_AB \
                                           ,mRGB,NBINS_RGB\
@@ -1831,6 +1923,24 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
             NEGIMG = 21;
             NEGSAMPLES = (NEGIMG*32);
         }
+        else if (nSAMPLES == 1060) //doors NYU acc > 0.8
+        {
+            ACC_THRESHOLD = 0.8;
+            NEGIMG = 14; //sample por imagen
+            NEGSAMPLES = (NEGIMG*239);
+        }
+        else if (nSAMPLES == 5766) //water LabelME acc > 0.5
+        {
+            ACC_THRESHOLD = 0.5;
+            NEGIMG = 100; //sample por imagen
+            NEGSAMPLES = (NEGIMG*100);
+        }
+        else if (nSAMPLES == 5589) //submarinas_5 conal/no_coral acc>0
+        {
+            ACC_THRESHOLD = 0;
+            NEGIMG = 50;
+            NEGSAMPLES = (NEGIMG*140);
+        }
         else
         {
             ACC_THRESHOLD = 0.5;
@@ -1852,6 +1962,8 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
         int neg=0;
         
         int numI=0;
+        
+        
         
         ////////////////////////
         //ADD POSITIVE SAMPLES: nSamples
@@ -1879,7 +1991,7 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
                     
                     if (dir_pathGT != "")
                     {
-                        imageGT = dir_pathGT + "/gt_" + i->path().filename().string();
+                        imageGT =  dir_pathGT + "/" + i->path().filename().string();//dir_pathGT + "/gt_" + i->path().filename().string();//
                         size_t lastindex = imageGT.find_last_of(".");
                         imageGT = imageGT.substr(0, lastindex) + ".png";
                     }
@@ -1959,12 +2071,12 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
                             printf("+ %d %f\n",pos,accT);
                             
                             //save positives!
-                            /* string npos = "/Users/acambra/TESIS/datasets/svt1/train/pos05/" + i->path().filename().string() + to_string(id) + ".png";
+                             /*string npos = "/Users/acambra/TESIS/datasets/LabelME/train/pos05/" + i->path().filename().string() + to_string(id) + ".png";
                              //"/Users/acambra/TESIS/CODE/build/GibHub_test_superpixels/Debug/ICDAR/train/pos1/" + i->path().filename().string() + to_string(id) + ".png";
                              imwrite(npos,SPCTE->cropSuperpixel(SPCTE->getImageSuperpixels(),id,3));//*/
                             
                         }
-                        else if (((1 - accT) == 1.0) && (sampleN > 0) && (neg < NEGSAMPLES))
+                        else if (((1 - accT) == 1.0)  && (sampleN > 0) && (neg < NEGSAMPLES))
                         {
                             descriptors.row(id).copyTo(trainingData.row(n));
                             labels.at<float>(n,0) = (float) LABEL_NOTEXT;//*/
@@ -1979,9 +2091,9 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
                         }
                     }//for SPTCTE//*/
                     
-                    /*delete SPCTE;
+                    delete SPCTE;
                     descriptors.release();
-                    accText.release();*/
+                    accText.release();//*/
                 }
             }//if image
         }//for
@@ -2050,6 +2162,9 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
     // Train the SVM
     CvSVM SVM;
     
+    if (nameSVM.find("KNN") == std::string::npos)
+    {
+    
     if ((nameSVM.find("AUTO") != std::string::npos))
     {
         SVM.train_auto(trainingData, labels, Mat(), Mat(), params);
@@ -2061,7 +2176,7 @@ void trainSVMText(string dir_path,string dir_pathGT, string dir_edges,string dir
     SVM.save(nameSVM.c_str());
     SVM.clear();
     
-    
+    }
     //}
     
     printf("\n===================================================================\n");

@@ -583,7 +583,7 @@ void SLIC::GetKValues_LABXYZ(
 	vector<double>&				kseedsz,
         const int&				STEP)
 {
-    const bool hexgrid = false;
+    //const bool hexgrid = false;
 	int numseeds(0);
 	int n(0);
 
@@ -815,7 +815,7 @@ void SLIC::Perform3DSupervoxelSLIC(
 	int x1, y1, x2, y2;
 	double l, a, b;
 	double dist;
-	double distxy, distxyz;
+	double distxyz;
         double widthx, widthy;
 	for( int itr = 0; itr < iterations; itr++ )
 	{

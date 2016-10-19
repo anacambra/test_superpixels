@@ -929,7 +929,7 @@ public:
     {
         //read image
         try{
-            _labelsInput = imread(path,CV_LOAD_IMAGE_UNCHANGED);
+            _labelsInput = imread(path,CV_LOAD_IMAGE_GRAYSCALE);
             
             
              printf("Image Labeling not zero %d\n",countNonZero(_labelsInput));
@@ -965,18 +965,14 @@ public:
             
             int l = _arraySP[id].create_labelHist(_labelsInput,NUMLABELS,mode);
             _labels.setTo(l,_arraySP[id].getMask());
-            printf("id %d label: %d\n",id,l);
+           // printf("id %d label: %d\n",id,l);
         }
 
         //paint
         labelSet val(NUMLABELS);
         Mat leyend= Mat::ones(_image.rows,_image.cols, CV_8UC3);
         
-        imshow("leyend",leyend);
-        waitKey(0);
-        //Mat out = val.paintLabelRandom(_labels,NUMLABELS,&leyend);
-        
-        leyend.release();
+       
         
         return val.paintLabelRandom(_labels,NUMLABELS,&leyend);//out;
 
@@ -1091,7 +1087,7 @@ public:
             
             //create oriented semantic label segmentation
             _arraySP[id1].create_labelOriented(seg,numLabels,getMaskNeigboursBB(id1));
-           //  _arraySP[id1].create_labelOrientedGlobal(seg,numLabels);
+            _arraySP[id1].create_labelOrientedGlobal(seg,numLabels);
 
         }
         
